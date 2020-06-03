@@ -9,7 +9,7 @@ import (
 )
 
 // github.com/mattn/go-sqlite3
-db, err := gorm.Open(mysql.Open("gorm.db"), &gorm.Config{})
+db, err := gorm.Open(sqlite.Open("gorm.db"), &gorm.Config{})
 ```
 
 Checkout [https://gorm.io](https://gorm.io) for details.
