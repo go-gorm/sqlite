@@ -30,10 +30,12 @@ func (m Migrator) HasColumn(value interface{}, name string) bool {
 			name = field.DBName
 		}
 
-		return m.DB.Raw(
-			"SELECT count(*) FROM sqlite_master WHERE type = ? AND tbl_name = ? AND (sql LIKE ? OR sql LIKE ? OR sql LIKE ?)",
-			"table", stmt.Table, `%"`+name+`" %`, `%`+name+` %`, "%`"+name+"`%",
-		).Row().Scan(&count)
+		if name != "" {
+			return m.DB.Raw(
+				"SELECT count(*) FROM sqlite_master WHERE type = ? AND tbl_name = ? AND (sql LIKE ? OR sql LIKE ? OR sql LIKE ?)",
+				"table", stmt.Table, `%"`+name+`" %`, `%`+name+` %`, "%`"+name+"`%",
+			).Row().Scan(&count)
+		}
 	})
 	return count > 0
 }
@@ -181,9 +183,11 @@ func (m Migrator) HasIndex(value interface{}, name string) bool {
 			name = idx.Name
 		}
 
-		m.DB.Raw(
-			"SELECT count(*) FROM sqlite_master WHERE type = ? AND tbl_name = ? AND name = ?", "index", stmt.Table, name,
-		).Row().Scan(&count)
+		if name != "" {
+			m.DB.Raw(
+				"SELECT count(*) FROM sqlite_master WHERE type = ? AND tbl_name = ? AND name = ?", "index", stmt.Table, name,
+			).Row().Scan(&count)
+		}
 		return nil
 	})
 	return count > 0
