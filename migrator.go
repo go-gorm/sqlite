@@ -31,11 +31,12 @@ func (m Migrator) HasColumn(value interface{}, name string) bool {
 		}
 
 		if name != "" {
-			return m.DB.Raw(
+			m.DB.Raw(
 				"SELECT count(*) FROM sqlite_master WHERE type = ? AND tbl_name = ? AND (sql LIKE ? OR sql LIKE ? OR sql LIKE ?)",
 				"table", stmt.Table, `%"`+name+`" %`, `%`+name+` %`, "%`"+name+"`%",
 			).Row().Scan(&count)
 		}
+		return nil
 	})
 	return count > 0
 }
