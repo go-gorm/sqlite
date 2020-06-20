@@ -33,6 +33,15 @@ func (dialector Dialector) Initialize(db *gorm.DB) (err error) {
 	return
 }
 
+func (dialector Dialector) DefaultValueOf(field *schema.Field) clause.Expression {
+	if field.AutoIncrement {
+		return clause.Expr{SQL: "NULL"}
+	}
+
+	// doesn't work, will raise error
+	return clause.Expr{SQL: "DEFAULT"}
+}
+
 func (dialector Dialector) Migrator(db *gorm.DB) gorm.Migrator {
 	return Migrator{migrator.Migrator{Config: migrator.Config{
 		DB:                          db,
@@ -60,7 +69,7 @@ func (dialector Dialector) DataTypeOf(field *schema.Field) string {
 	case schema.Bool:
 		return "numeric"
 	case schema.Int, schema.Uint:
-		if field.AutoIncrement {
+		if field.AutoIncrement && !field.PrimaryKey {
 			// https://www.sqlite.org/autoinc.html
 			return "integer PRIMARY KEY AUTOINCREMENT"
 		} else {
