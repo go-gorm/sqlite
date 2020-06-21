@@ -15,12 +15,42 @@ type Migrator struct {
 	migrator.Migrator
 }
 
+func (m *Migrator) RunWithoutForeignKey(fc func() error) error {
+	var enabled int
+	m.DB.Raw("PRAGMA foreign_keys").Scan(&enabled)
+	if enabled == 1 {
+		m.DB.Exec("PRAGMA foreign_keys = OFF")
+		defer m.DB.Exec("PRAGMA foreign_keys = ON")
+	}
+
+	return fc()
+}
+
 func (m Migrator) HasTable(value interface{}) bool {
 	var count int
 	m.Migrator.RunWithValue(value, func(stmt *gorm.Statement) error {
 		return m.DB.Raw("SELECT count(*) FROM sqlite_master WHERE type='table' AND name=?", stmt.Table).Row().Scan(&count)
 	})
 	return count > 0
+}
+
+func (m Migrator) DropTable(values ...interface{}) error {
+	return m.RunWithoutForeignKey(func() error {
+		values = m.ReorderModels(values, false)
+		tx := m.DB.Session(&gorm.Session{})
+
+		for i := len(values) - 1; i >= 0; i-- {
+			if err := m.RunWithValue(values[i], func(stmt *gorm.Statement) error {
+				return tx.Exec("DROP TABLE IF EXISTS ?", clause.Table{Name: stmt.Table}).Error
+			}); err != nil {
+				return err
+			}
+		}
+
+		return nil
+	})
+
+	return nil
 }
 
 func (m Migrator) HasColumn(value interface{}, name string) bool {
@@ -42,38 +72,40 @@ func (m Migrator) HasColumn(value interface{}, name string) bool {
 }
 
 func (m Migrator) AlterColumn(value interface{}, name string) error {
-	return m.RunWithValue(value, func(stmt *gorm.Statement) error {
-		if field := stmt.Schema.LookUpField(name); field != nil {
-			var (
-				createSQL    string
-				newTableName = stmt.Table + "__temp"
-			)
+	return m.RunWithoutForeignKey(func() error {
+		return m.RunWithValue(value, func(stmt *gorm.Statement) error {
+			if field := stmt.Schema.LookUpField(name); field != nil {
+				var (
+					createSQL    string
+					newTableName = stmt.Table + "__temp"
+				)
 
-			m.DB.Raw("SELECT sql FROM sqlite_master WHERE type = ? AND tbl_name = ? AND name = ?", "table", stmt.Table, stmt.Table).Row().Scan(&createSQL)
+				m.DB.Raw("SELECT sql FROM sqlite_master WHERE type = ? AND tbl_name = ? AND name = ?", "table", stmt.Table, stmt.Table).Row().Scan(&createSQL)
 
-			if reg, err := regexp.Compile("(`|'|\"| )" + name + "(`|'|\"| ) .*?,"); err == nil {
-				tableReg, err := regexp.Compile(" ('|`|\"| )" + stmt.Table + "('|`|\"| ) ")
-				if err != nil {
+				if reg, err := regexp.Compile("(`|'|\"| )" + name + "(`|'|\"| ) .*?,"); err == nil {
+					tableReg, err := regexp.Compile(" ('|`|\"| )" + stmt.Table + "('|`|\"| ) ")
+					if err != nil {
+						return err
+					}
+
+					createSQL = tableReg.ReplaceAllString(createSQL, fmt.Sprintf(" `%v` ", newTableName))
+					createSQL = reg.ReplaceAllString(createSQL, "?")
+
+					var columns []string
+					columnTypes, _ := m.DB.Migrator().ColumnTypes(value)
+					for _, columnType := range columnTypes {
+						columns = append(columns, fmt.Sprintf("`%v`", columnType.Name()))
+					}
+
+					createSQL = fmt.Sprintf("BEGIN TRANSACTION;"+createSQL+";INSERT INTO `%v`(%v) SELECT %v FROM `%v`;DROP TABLE `%v`;ALTER TABLE `%v` RENAME TO `%v`;COMMIT;", newTableName, strings.Join(columns, ","), strings.Join(columns, ","), stmt.Table, stmt.Table, newTableName, stmt.Table)
+					return m.DB.Exec(createSQL, m.FullDataTypeOf(field)).Error
+				} else {
 					return err
 				}
-
-				createSQL = tableReg.ReplaceAllString(createSQL, fmt.Sprintf(" `%v` ", newTableName))
-				createSQL = reg.ReplaceAllString(createSQL, "?")
-
-				var columns []string
-				columnTypes, _ := m.DB.Migrator().ColumnTypes(value)
-				for _, columnType := range columnTypes {
-					columns = append(columns, fmt.Sprintf("`%v`", columnType.Name()))
-				}
-
-				createSQL = fmt.Sprintf("PRAGMA foreign_keys=off;BEGIN TRANSACTION;"+createSQL+";INSERT INTO `%v`(%v) SELECT %v FROM `%v`;DROP TABLE `%v`;ALTER TABLE `%v` RENAME TO `%v`;COMMIT;", newTableName, strings.Join(columns, ","), strings.Join(columns, ","), stmt.Table, stmt.Table, newTableName, stmt.Table)
-				return m.DB.Exec(createSQL, m.FullDataTypeOf(field)).Error
 			} else {
-				return err
+				return fmt.Errorf("failed to alter field with name %v", name)
 			}
-		} else {
-			return fmt.Errorf("failed to alter field with name %v", name)
-		}
+		})
 	})
 }
 
@@ -107,7 +139,7 @@ func (m Migrator) DropColumn(value interface{}, name string) error {
 				}
 			}
 
-			createSQL = fmt.Sprintf("PRAGMA foreign_keys=off;BEGIN TRANSACTION;"+createSQL+";INSERT INTO `%v`(%v) SELECT %v FROM `%v`;DROP TABLE `%v`;ALTER TABLE `%v` RENAME TO `%v`;COMMIT;", newTableName, strings.Join(columns, ","), strings.Join(columns, ","), stmt.Table, stmt.Table, newTableName, stmt.Table)
+			createSQL = fmt.Sprintf("BEGIN TRANSACTION;"+createSQL+";INSERT INTO `%v`(%v) SELECT %v FROM `%v`;DROP TABLE `%v`;ALTER TABLE `%v` RENAME TO `%v`;COMMIT;", newTableName, strings.Join(columns, ","), strings.Join(columns, ","), stmt.Table, stmt.Table, newTableName, stmt.Table)
 
 			return m.DB.Exec(createSQL).Error
 		} else {
