@@ -156,6 +156,20 @@ func (m Migrator) DropConstraint(interface{}, string) error {
 	return gorm.ErrNotImplemented
 }
 
+func (m Migrator) HasConstraint(value interface{}, name string) bool {
+	var count int64
+	m.RunWithValue(value, func(stmt *gorm.Statement) error {
+		m.DB.Raw(
+			"SELECT count(*) FROM sqlite_master WHERE type = ? AND tbl_name = ? AND (sql LIKE ? OR sql LIKE ? OR sql LIKE ?)",
+			"table", stmt.Table, `%CONSTRAINT "`+name+`" %`, `%CONSTRAINT `+name+` %`, "%CONSTRAINT `"+name+"`%",
+		).Row().Scan(&count)
+
+		return nil
+	})
+
+	return count > 0
+}
+
 func (m Migrator) CurrentDatabase() (name string) {
 	var null interface{}
 	m.DB.Raw("PRAGMA database_list").Row().Scan(&null, &name, &null)
