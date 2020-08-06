@@ -31,7 +31,37 @@ func (dialector Dialector) Initialize(db *gorm.DB) (err error) {
 		LastInsertIDReversed: true,
 	})
 	db.ConnPool, err = sql.Open("sqlite3", dialector.DSN)
+
+	for k, v := range dialector.ClauseBuilders() {
+		db.ClauseBuilders[k] = v
+	}
 	return
+}
+
+func (dialector Dialector) ClauseBuilders() map[string]clause.ClauseBuilder {
+	return map[string]clause.ClauseBuilder{
+		"INSERT": func(c clause.Clause, builder clause.Builder) {
+			if insert, ok := c.Expression.(clause.Insert); ok {
+				if stmt, ok := builder.(*gorm.Statement); ok {
+					stmt.WriteString("INSERT ")
+					if insert.Modifier != "" {
+						stmt.WriteString(insert.Modifier)
+						stmt.WriteByte(' ')
+					}
+
+					stmt.WriteString("INTO ")
+					if insert.Table.Name == "" {
+						stmt.WriteQuoted(stmt.Table)
+					} else {
+						stmt.WriteQuoted(insert.Table)
+					}
+					return
+				}
+			}
+
+			c.Build(builder)
+		},
+	}
 }
 
 func (dialector Dialector) DefaultValueOf(field *schema.Field) clause.Expression {
