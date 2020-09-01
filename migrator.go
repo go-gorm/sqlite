@@ -82,14 +82,14 @@ func (m Migrator) AlterColumn(value interface{}, name string) error {
 
 				m.DB.Raw("SELECT sql FROM sqlite_master WHERE type = ? AND tbl_name = ? AND name = ?", "table", stmt.Table, stmt.Table).Row().Scan(&createSQL)
 
-				if reg, err := regexp.Compile("(`|'|\"| )" + name + "(`|'|\"| ) .*?,"); err == nil {
+				if reg, err := regexp.Compile("(`|'|\"| )" + field.DBName + "(`|'|\"| ) .*?,"); err == nil {
 					tableReg, err := regexp.Compile(" ('|`|\"| )" + stmt.Table + "('|`|\"| ) ")
 					if err != nil {
 						return err
 					}
 
 					createSQL = tableReg.ReplaceAllString(createSQL, fmt.Sprintf(" `%v` ", newTableName))
-					createSQL = reg.ReplaceAllString(createSQL, "?")
+					createSQL = reg.ReplaceAllString(createSQL, fmt.Sprintf("`%v` ?,", field.DBName))
 
 					var columns []string
 					columnTypes, _ := m.DB.Migrator().ColumnTypes(value)
