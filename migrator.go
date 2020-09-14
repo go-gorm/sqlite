@@ -139,9 +139,20 @@ func (m Migrator) DropColumn(value interface{}, name string) error {
 				}
 			}
 
-			createSQL = fmt.Sprintf("BEGIN TRANSACTION;"+createSQL+";INSERT INTO `%v`(%v) SELECT %v FROM `%v`;DROP TABLE `%v`;ALTER TABLE `%v` RENAME TO `%v`;COMMIT;", newTableName, strings.Join(columns, ","), strings.Join(columns, ","), stmt.Table, stmt.Table, newTableName, stmt.Table)
-
-			return m.DB.Exec(createSQL).Error
+			return m.DB.Transaction(func(tx *gorm.DB) error {
+				queries := []string{
+					createSQL,
+					fmt.Sprintf("INSERT INTO `%v`(%v) SELECT %v FROM `%v`", newTableName, strings.Join(columns, ","), strings.Join(columns, ","), stmt.Table),
+					fmt.Sprintf("DROP TABLE `%v`", stmt.Table),
+					fmt.Sprintf("ALTER TABLE `%v` RENAME TO `%v`", newTableName, stmt.Table),
+				}
+				for _, query := range queries {
+					if err := tx.Exec(query).Error; err != nil {
+						return err
+					}
+				}
+				return nil
+			})
 		} else {
 			return err
 		}
