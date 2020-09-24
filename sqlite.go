@@ -14,8 +14,12 @@ import (
 	"gorm.io/gorm/schema"
 )
 
+// DriverName is the default driver name for SQLite.
+const DriverName = "sqlite3"
+
 type Dialector struct {
-	DSN string
+	DriverName string
+	DSN        string
 }
 
 func Open(dsn string) gorm.Dialector {
@@ -27,11 +31,15 @@ func (dialector Dialector) Name() string {
 }
 
 func (dialector Dialector) Initialize(db *gorm.DB) (err error) {
+	if dialector.DriverName == "" {
+		dialector.DriverName = DriverName
+	}
+
 	// register callbacks
 	callbacks.RegisterDefaultCallbacks(db, &callbacks.Config{
 		LastInsertIDReversed: true,
 	})
-	db.ConnPool, err = sql.Open("sqlite3", dialector.DSN)
+	db.ConnPool, err = sql.Open(dialector.DriverName, dialector.DSN)
 
 	for k, v := range dialector.ClauseBuilders() {
 		db.ClauseBuilders[k] = v
