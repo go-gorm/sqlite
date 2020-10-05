@@ -20,6 +20,7 @@ const DriverName = "sqlite3"
 type Dialector struct {
 	DriverName string
 	DSN        string
+	Conn       gorm.ConnPool
 }
 
 func Open(dsn string) gorm.Dialector {
@@ -39,7 +40,15 @@ func (dialector Dialector) Initialize(db *gorm.DB) (err error) {
 	callbacks.RegisterDefaultCallbacks(db, &callbacks.Config{
 		LastInsertIDReversed: true,
 	})
-	db.ConnPool, err = sql.Open(dialector.DriverName, dialector.DSN)
+
+	if dialector.Conn != nil {
+		db.ConnPool = dialector.Conn
+	} else {
+		db.ConnPool, err = sql.Open(dialector.DriverName, dialector.DSN)
+		if err != nil {
+			return err
+		}
+	}
 
 	for k, v := range dialector.ClauseBuilders() {
 		db.ClauseBuilders[k] = v
