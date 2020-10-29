@@ -94,6 +94,13 @@ func (dialector Dialector) ClauseBuilders() map[string]clause.ClauseBuilder {
 				}
 			}
 		},
+		"FOR": func(c clause.Clause, builder clause.Builder) {
+			if _, ok := c.Expression.(clause.Locking); ok {
+				// SQLite3 does not support row-level locking.
+				return
+			}
+			c.Build(builder)
+		},
 	}
 }
 
