@@ -1,12 +1,11 @@
-# GORM Sqlite Driver
+# GORM Sqlite Driver without CGO
 
-![CI](https://github.com/go-gorm/sqlite/workflows/CI/badge.svg)
 
 ## USAGE
 
 ```go
 import (
-  "gorm.io/driver/sqlite"
+  "magna5/gormsqlite"
   "gorm.io/gorm"
 )
 
