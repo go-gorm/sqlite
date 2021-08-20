@@ -1,4 +1,4 @@
-module github.com/magna5/gormsqlite
+module github.com/ringsq/gormsqlite
 
 go 1.14
 

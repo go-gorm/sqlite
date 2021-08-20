@@ -5,7 +5,7 @@
 
 ```go
 import (
-  "magna5/gormsqlite"
+  "ringsq/gormsqlite"
   "gorm.io/gorm"
 )
 
