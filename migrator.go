@@ -49,8 +49,6 @@ func (m Migrator) DropTable(values ...interface{}) error {
 
 		return nil
 	})
-
-	return nil
 }
 
 func (m Migrator) HasColumn(value interface{}, name string) bool {
@@ -173,8 +171,67 @@ func (m Migrator) DropColumn(value interface{}, name string) error {
 	})
 }
 
-func (m Migrator) CreateConstraint(interface{}, string) error {
-	return ErrConstraintsNotImplemented
+func (m Migrator) CreateConstraint(value interface{}, name string) error {
+	return m.RunWithValue(value, func(stmt *gorm.Statement) error {
+		constraint, chk, table := m.GuessConstraintAndTable(stmt, name)
+
+		var (
+			createSQL    string
+			newTableName = table + "__temp"
+
+			constraintName   string
+			constraintSql    string
+			constraintValues []interface{}
+		)
+
+		if constraint != nil {
+			constraintName = constraint.Name
+			constraintSql, constraintValues = buildConstraint(constraint)
+		} else if chk != nil {
+			constraintName = chk.Name
+			constraintSql = "CONSTRAINT ? CHECK (?)"
+			constraintValues = []interface{}{clause.Column{Name: chk.Name}, clause.Expr{SQL: chk.Constraint}}
+		} else {
+			return nil
+		}
+
+		m.DB.Raw("SELECT sql FROM sqlite_master WHERE type = ? AND tbl_name = ? AND name = ?", "table", table, table).Row().Scan(&createSQL)
+
+		tableReg, err := regexp.Compile(" ('|`|\"| )" + table + "('|`|\"| ) ")
+		if err != nil {
+			return err
+		}
+
+		createDDL, err := parseDDL(createSQL)
+		if err != nil {
+			return err
+		}
+		createDDL.addConstraint(constraintName, constraintSql)
+		createSQL = createDDL.compile()
+
+		createSQL = tableReg.ReplaceAllString(createSQL, fmt.Sprintf(" `%v` ", newTableName))
+
+		var columns []string
+		columnTypes, _ := m.DB.Migrator().ColumnTypes(value)
+		for _, columnType := range columnTypes {
+			columns = append(columns, fmt.Sprintf("`%v`", columnType.Name()))
+		}
+
+		return m.DB.Transaction(func(tx *gorm.DB) error {
+			queries := []string{
+				createSQL,
+				fmt.Sprintf("INSERT INTO `%v`(%v) SELECT %v FROM `%v`", newTableName, strings.Join(columns, ","), strings.Join(columns, ","), table),
+				fmt.Sprintf("DROP TABLE `%v`", table),
+				fmt.Sprintf("ALTER TABLE `%v` RENAME TO `%v`", newTableName, table),
+			}
+			for _, query := range queries {
+				if err := tx.Exec(query, constraintValues...).Error; err != nil {
+					return err
+				}
+			}
+			return nil
+		})
+	})
 }
 
 func (m Migrator) DropConstraint(interface{}, string) error {
@@ -284,4 +341,26 @@ func (m Migrator) DropIndex(value interface{}, name string) error {
 
 		return m.DB.Exec("DROP INDEX ?", clause.Column{Name: name}).Error
 	})
+}
+
+func buildConstraint(constraint *schema.Constraint) (sql string, results []interface{}) {
+	sql = "CONSTRAINT ? FOREIGN KEY ? REFERENCES ??"
+	if constraint.OnDelete != "" {
+		sql += " ON DELETE " + constraint.OnDelete
+	}
+
+	if constraint.OnUpdate != "" {
+		sql += " ON UPDATE " + constraint.OnUpdate
+	}
+
+	var foreignKeys, references []interface{}
+	for _, field := range constraint.ForeignKeys {
+		foreignKeys = append(foreignKeys, clause.Column{Name: field.DBName})
+	}
+
+	for _, field := range constraint.References {
+		references = append(references, clause.Column{Name: field.DBName})
+	}
+	results = append(results, clause.Table{Name: constraint.Name}, foreignKeys, clause.Table{Name: constraint.ReferenceSchema.Table}, references)
+	return
 }
