@@ -13,7 +13,7 @@ func TestParseDDL(t *testing.T) {
 		nFields int
 	}{
 		{"with_fk", "CREATE TABLE `notes` (`id` integer NOT NULL,`text` varchar(500),`user_id` integer,PRIMARY KEY (`id`),CONSTRAINT `fk_users_notes` FOREIGN KEY (`user_id`) REFERENCES `users`(`id`))", 5},
-		{"with_check", "CREATE TABLE Persons (ID int NOT NULL,LastName varchar(255) NOT NULL,FirstName varchar(255),Age int,CHECK (Age>=18),CHECK (FirstName!='John'))", 6},
+		{"with_check", "CREATE TABLE Persons (ID int NOT NULL,LastName varchar(255) NOT NULL,FirstName varchar(255),Age int,CHECK (Age>=18),CHECK (FirstName<>'John'))", 6},
 		{"lowercase", "create table test (ID int NOT NULL)", 1},
 		{"no brackets", "create table test", 0},
 	}
@@ -102,32 +102,32 @@ func TestAddConstraint(t *testing.T) {
 
 func TestRemoveConstraint(t *testing.T) {
 	params := []struct {
-		name   string
-		fields []string
-		cName  string
+		name    string
+		fields  []string
+		cName   string
 		success bool
-		expect []string
+		expect  []string
 	}{
 		{
-			name:   "fk",
-			fields: []string{"`id` integer NOT NULL", "CONSTRAINT `fk_users_notes` FOREIGN KEY (`user_id`) REFERENCES `users`(`id`))"},
-			cName:  "fk_users_notes",
+			name:    "fk",
+			fields:  []string{"`id` integer NOT NULL", "CONSTRAINT `fk_users_notes` FOREIGN KEY (`user_id`) REFERENCES `users`(`id`))"},
+			cName:   "fk_users_notes",
 			success: true,
-			expect: []string{"`id` integer NOT NULL"},
+			expect:  []string{"`id` integer NOT NULL"},
 		},
 		{
-			name:   "check",
-			fields: []string{"CONSTRAINT `name_checker` CHECK (`name` <> 'thetadev')", "`id` integer NOT NULL"},
-			cName:  "name_checker",
+			name:    "check",
+			fields:  []string{"CONSTRAINT `name_checker` CHECK (`name` <> 'thetadev')", "`id` integer NOT NULL"},
+			cName:   "name_checker",
 			success: true,
-			expect: []string{"`id` integer NOT NULL"},
+			expect:  []string{"`id` integer NOT NULL"},
 		},
 		{
-			name:   "none",
-			fields: []string{"CONSTRAINT `name_checker` CHECK (`name` <> 'thetadev')", "`id` integer NOT NULL"},
-			cName:  "nothing",
+			name:    "none",
+			fields:  []string{"CONSTRAINT `name_checker` CHECK (`name` <> 'thetadev')", "`id` integer NOT NULL"},
+			cName:   "nothing",
 			success: false,
-			expect: []string{"CONSTRAINT `name_checker` CHECK (`name` <> 'thetadev')", "`id` integer NOT NULL"},
+			expect:  []string{"CONSTRAINT `name_checker` CHECK (`name` <> 'thetadev')", "`id` integer NOT NULL"},
 		},
 	}
 
@@ -136,9 +136,41 @@ func TestRemoveConstraint(t *testing.T) {
 			testDDL := ddl{fields: p.fields}
 
 			success := testDDL.removeConstraint(p.cName)
-			
+
 			assert.Equal(t, p.success, success)
 			assert.Equal(t, p.expect, testDDL.fields)
+		})
+	}
+}
+
+func TestGetColumns(t *testing.T) {
+	params := []struct {
+		name    string
+		ddl     string
+		columns []string
+	}{
+		{
+			name:    "with_fk",
+			ddl:     "CREATE TABLE `notes` (`id` integer NOT NULL,`text` varchar(500),`user_id` integer,PRIMARY KEY (`id`),CONSTRAINT `fk_users_notes` FOREIGN KEY (`user_id`) REFERENCES `users`(`id`))",
+			columns: []string{"`id`", "`text`", "`user_id`"},
+		},
+		{
+			name:    "with_check",
+			ddl:     "CREATE TABLE Persons (ID int NOT NULL,LastName varchar(255) NOT NULL,FirstName varchar(255),Age int,CHECK (Age>=18),CHECK (FirstName!='John'))",
+			columns: []string{"`ID`", "`LastName`", "`FirstName`", "`Age`"},
+		},
+	}
+
+	for _, p := range params {
+		t.Run(p.name, func(t *testing.T) {
+			testDDL, err := parseDDL(p.ddl)
+			if err != nil {
+				panic(err.Error())
+			}
+
+			cols := testDDL.getColumns()
+
+			assert.Equal(t, p.columns, cols)
 		})
 	}
 }

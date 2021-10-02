@@ -13,8 +13,8 @@ type ddl struct {
 }
 
 func parseDDL(sql string) (*ddl, error) {
-	rex := regexp.MustCompile("(?i)(CREATE TABLE [\"`]?[\\w\\d]+[\"`]?)(?: \\((.*)\\))?")
-	sections := rex.FindStringSubmatch(sql)
+	reg := regexp.MustCompile("(?i)(CREATE TABLE [\"`]?[\\w\\d]+[\"`]?)(?: \\((.*)\\))?")
+	sections := reg.FindStringSubmatch(sql)
 
 	if sections == nil {
 		return nil, errors.New("invalid DDL")
@@ -87,10 +87,10 @@ func (d *ddl) compile() string {
 }
 
 func (d *ddl) addConstraint(name string, sql string) {
-	rex := regexp.MustCompile("^CONSTRAINT [\"`]?" + regexp.QuoteMeta(name) + "[\"` ]")
+	reg := regexp.MustCompile("^CONSTRAINT [\"`]?" + regexp.QuoteMeta(name) + "[\"` ]")
 
 	for i := 0; i < len(d.fields); i++ {
-		if rex.MatchString(d.fields[i]) {
+		if reg.MatchString(d.fields[i]) {
 			d.fields[i] = sql
 			return
 		}
@@ -100,13 +100,45 @@ func (d *ddl) addConstraint(name string, sql string) {
 }
 
 func (d *ddl) removeConstraint(name string) bool {
-	rex := regexp.MustCompile("^CONSTRAINT [\"`]?" + regexp.QuoteMeta(name) + "[\"` ]")
+	reg := regexp.MustCompile("^CONSTRAINT [\"`]?" + regexp.QuoteMeta(name) + "[\"` ]")
 
 	for i := 0; i < len(d.fields); i++ {
-		if rex.MatchString(d.fields[i]) {
+		if reg.MatchString(d.fields[i]) {
 			d.fields = append(d.fields[:i], d.fields[i+1:]...)
 			return true
 		}
 	}
 	return false
+}
+
+func (d *ddl) hasConstraint(name string) bool {
+	reg := regexp.MustCompile("^CONSTRAINT [\"`]?" + regexp.QuoteMeta(name) + "[\"` ]")
+
+	for _, f := range d.fields {
+		if reg.MatchString(f) {
+			return true
+		}
+	}
+	return false
+}
+
+func (d *ddl) getColumns() []string {
+	res := []string{}
+
+	for _, f := range d.fields {
+		fUpper := strings.ToUpper(f)
+		if strings.HasPrefix(fUpper, "PRIMARY KEY") ||
+			strings.HasPrefix(fUpper, "CHECK") ||
+			strings.HasPrefix(fUpper, "CONSTRAINT") {
+			continue
+		}
+
+		reg := regexp.MustCompile("^[\"`]?([\\w\\d]+)[\"`]?")
+		match := reg.FindStringSubmatch(f)
+
+		if match != nil {
+			res = append(res, "`"+match[1]+"`")
+		}
+	}
+	return res
 }
