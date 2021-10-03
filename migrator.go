@@ -143,16 +143,42 @@ func (m Migrator) CreateConstraint(value interface{}, name string) error {
 	})
 }
 
-func (m Migrator) DropConstraint(interface{}, string) error {
-	return ErrConstraintsNotImplemented
+func (m Migrator) DropConstraint(value interface{}, name string) error {
+	return m.RunWithValue(value, func(stmt *gorm.Statement) error {
+		constraint, chk, table := m.GuessConstraintAndTable(stmt, name)
+		if constraint != nil {
+			name = constraint.Name
+		} else if chk != nil {
+			name = chk.Name
+		}
+
+		return m.recreateTable(value, &table,
+			func(rawDDL string, stmt *gorm.Statement) (sql string, sqlArgs []interface{}, err error) {
+				createDDL, err := parseDDL(rawDDL)
+				if err != nil {
+					return "", nil, err
+				}
+				createDDL.removeConstraint(name)
+				createSQL := createDDL.compile()
+
+				return createSQL, nil, nil
+			})
+	})
 }
 
 func (m Migrator) HasConstraint(value interface{}, name string) bool {
 	var count int64
 	m.RunWithValue(value, func(stmt *gorm.Statement) error {
+		constraint, chk, table := m.GuessConstraintAndTable(stmt, name)
+		if constraint != nil {
+			name = constraint.Name
+		} else if chk != nil {
+			name = chk.Name
+		}
+
 		m.DB.Raw(
 			"SELECT count(*) FROM sqlite_master WHERE type = ? AND tbl_name = ? AND (sql LIKE ? OR sql LIKE ? OR sql LIKE ?)",
-			"table", stmt.Table, `%CONSTRAINT "`+name+`" %`, `%CONSTRAINT `+name+` %`, "%CONSTRAINT `"+name+"`%",
+			"table", table, `%CONSTRAINT "`+name+`" %`, `%CONSTRAINT `+name+` %`, "%CONSTRAINT `"+name+"`%",
 		).Row().Scan(&count)
 
 		return nil
