@@ -49,8 +49,6 @@ func (m Migrator) DropTable(values ...interface{}) error {
 
 		return nil
 	})
-
-	return nil
 }
 
 func (m Migrator) HasColumn(value interface{}, name string) bool {
@@ -75,118 +73,112 @@ func (m Migrator) HasColumn(value interface{}, name string) bool {
 
 func (m Migrator) AlterColumn(value interface{}, name string) error {
 	return m.RunWithoutForeignKey(func() error {
-		return m.RunWithValue(value, func(stmt *gorm.Statement) error {
+		return m.recreateTable(value, nil, func(rawDDL string, stmt *gorm.Statement) (sql string, sqlArgs []interface{}, err error) {
 			if field := stmt.Schema.LookUpField(name); field != nil {
-				var (
-					createSQL    string
-					newTableName = stmt.Table + "__temp"
-				)
-
-				m.DB.Raw("SELECT sql FROM sqlite_master WHERE type = ? AND tbl_name = ? AND name = ?", "table", stmt.Table, stmt.Table).Row().Scan(&createSQL)
-
-				if reg, err := regexp.Compile("(`|'|\"| )" + field.DBName + "(`|'|\"| ) .*?,"); err == nil {
-					tableReg, err := regexp.Compile(" ('|`|\"| )" + stmt.Table + "('|`|\"| ) ")
-					if err != nil {
-						return err
-					}
-
-					createSQL = tableReg.ReplaceAllString(createSQL, fmt.Sprintf(" `%v` ", newTableName))
-					createSQL = reg.ReplaceAllString(createSQL, fmt.Sprintf("`%v` ?,", field.DBName))
-
-					var columns []string
-					columnTypes, _ := m.DB.Migrator().ColumnTypes(value)
-					for _, columnType := range columnTypes {
-						columns = append(columns, fmt.Sprintf("`%v`", columnType.Name()))
-					}
-
-					return m.DB.Transaction(func(tx *gorm.DB) error {
-						queries := []string{
-							createSQL,
-							fmt.Sprintf("INSERT INTO `%v`(%v) SELECT %v FROM `%v`", newTableName, strings.Join(columns, ","), strings.Join(columns, ","), stmt.Table),
-							fmt.Sprintf("DROP TABLE `%v`", stmt.Table),
-							fmt.Sprintf("ALTER TABLE `%v` RENAME TO `%v`", newTableName, stmt.Table),
-						}
-						for _, query := range queries {
-							if err := tx.Exec(query, m.FullDataTypeOf(field)).Error; err != nil {
-								return err
-							}
-						}
-						return nil
-					})
-				} else {
-					return err
+				reg, err := regexp.Compile("(`|'|\"| )" + field.DBName + "(`|'|\"| ) .*?,")
+				if err != nil {
+					return "", nil, err
 				}
+
+				createSQL := reg.ReplaceAllString(rawDDL, fmt.Sprintf("`%v` ?,", field.DBName))
+
+				return createSQL, []interface{}{m.FullDataTypeOf(field)}, nil
+
 			} else {
-				return fmt.Errorf("failed to alter field with name %v", name)
+				return "", nil, fmt.Errorf("failed to alter field with name %v", name)
 			}
 		})
 	})
 }
 
 func (m Migrator) DropColumn(value interface{}, name string) error {
-	return m.RunWithValue(value, func(stmt *gorm.Statement) error {
+	return m.recreateTable(value, nil, func(rawDDL string, stmt *gorm.Statement) (sql string, sqlArgs []interface{}, err error) {
 		if field := stmt.Schema.LookUpField(name); field != nil {
 			name = field.DBName
 		}
 
-		var (
-			createSQL    string
-			newTableName = stmt.Table + "__temp"
-		)
-
-		m.DB.Raw("SELECT sql FROM sqlite_master WHERE type = ? AND tbl_name = ? AND name = ?", "table", stmt.Table, stmt.Table).Row().Scan(&createSQL)
-
-		if reg, err := regexp.Compile("(`|'|\"| )" + name + "(`|'|\"| ) .*?,"); err == nil {
-			tableReg, err := regexp.Compile(" ('|`|\"| )" + stmt.Table + "('|`|\"| ) ")
-			if err != nil {
-				return err
-			}
-
-			createSQL = tableReg.ReplaceAllString(createSQL, fmt.Sprintf(" `%v` ", newTableName))
-			createSQL = reg.ReplaceAllString(createSQL, "")
-
-			var columns []string
-			columnTypes, _ := m.DB.Migrator().ColumnTypes(value)
-			for _, columnType := range columnTypes {
-				if columnType.Name() != name {
-					columns = append(columns, fmt.Sprintf("`%v`", columnType.Name()))
-				}
-			}
-
-			return m.DB.Transaction(func(tx *gorm.DB) error {
-				queries := []string{
-					createSQL,
-					fmt.Sprintf("INSERT INTO `%v`(%v) SELECT %v FROM `%v`", newTableName, strings.Join(columns, ","), strings.Join(columns, ","), stmt.Table),
-					fmt.Sprintf("DROP TABLE `%v`", stmt.Table),
-					fmt.Sprintf("ALTER TABLE `%v` RENAME TO `%v`", newTableName, stmt.Table),
-				}
-				for _, query := range queries {
-					if err := tx.Exec(query).Error; err != nil {
-						return err
-					}
-				}
-				return nil
-			})
-		} else {
-			return err
+		reg, err := regexp.Compile("(`|'|\"| )" + name + "(`|'|\"| ) .*?,")
+		if err != nil {
+			return "", nil, err
 		}
+
+		createSQL := reg.ReplaceAllString(rawDDL, "")
+
+		return createSQL, nil, nil
 	})
 }
 
-func (m Migrator) CreateConstraint(interface{}, string) error {
-	return ErrConstraintsNotImplemented
+func (m Migrator) CreateConstraint(value interface{}, name string) error {
+	return m.RunWithValue(value, func(stmt *gorm.Statement) error {
+		constraint, chk, table := m.GuessConstraintAndTable(stmt, name)
+
+		return m.recreateTable(value, &table,
+			func(rawDDL string, stmt *gorm.Statement) (sql string, sqlArgs []interface{}, err error) {
+				var (
+					constraintName   string
+					constraintSql    string
+					constraintValues []interface{}
+				)
+
+				if constraint != nil {
+					constraintName = constraint.Name
+					constraintSql, constraintValues = buildConstraint(constraint)
+				} else if chk != nil {
+					constraintName = chk.Name
+					constraintSql = "CONSTRAINT ? CHECK (?)"
+					constraintValues = []interface{}{clause.Column{Name: chk.Name}, clause.Expr{SQL: chk.Constraint}}
+				} else {
+					return "", nil, nil
+				}
+
+				createDDL, err := parseDDL(rawDDL)
+				if err != nil {
+					return "", nil, err
+				}
+				createDDL.addConstraint(constraintName, constraintSql)
+				createSQL := createDDL.compile()
+
+				return createSQL, constraintValues, nil
+			})
+	})
 }
 
-func (m Migrator) DropConstraint(interface{}, string) error {
-	return ErrConstraintsNotImplemented
+func (m Migrator) DropConstraint(value interface{}, name string) error {
+	return m.RunWithValue(value, func(stmt *gorm.Statement) error {
+		constraint, chk, table := m.GuessConstraintAndTable(stmt, name)
+		if constraint != nil {
+			name = constraint.Name
+		} else if chk != nil {
+			name = chk.Name
+		}
+
+		return m.recreateTable(value, &table,
+			func(rawDDL string, stmt *gorm.Statement) (sql string, sqlArgs []interface{}, err error) {
+				createDDL, err := parseDDL(rawDDL)
+				if err != nil {
+					return "", nil, err
+				}
+				createDDL.removeConstraint(name)
+				createSQL := createDDL.compile()
+
+				return createSQL, nil, nil
+			})
+	})
 }
 
 func (m Migrator) HasConstraint(value interface{}, name string) bool {
 	var count int64
 	m.RunWithValue(value, func(stmt *gorm.Statement) error {
+		constraint, chk, table := m.GuessConstraintAndTable(stmt, name)
+		if constraint != nil {
+			name = constraint.Name
+		} else if chk != nil {
+			name = chk.Name
+		}
+
 		m.DB.Raw(
 			"SELECT count(*) FROM sqlite_master WHERE type = ? AND tbl_name = ? AND (sql LIKE ? OR sql LIKE ? OR sql LIKE ?)",
-			"table", stmt.Table, `%CONSTRAINT "`+name+`" %`, `%CONSTRAINT `+name+` %`, "%CONSTRAINT `"+name+"`%",
+			"table", table, `%CONSTRAINT "`+name+`" %`, `%CONSTRAINT `+name+` %`, "%CONSTRAINT `"+name+"`%",
 		).Row().Scan(&count)
 
 		return nil
@@ -283,5 +275,89 @@ func (m Migrator) DropIndex(value interface{}, name string) error {
 		}
 
 		return m.DB.Exec("DROP INDEX ?", clause.Column{Name: name}).Error
+	})
+}
+
+func buildConstraint(constraint *schema.Constraint) (sql string, results []interface{}) {
+	sql = "CONSTRAINT ? FOREIGN KEY ? REFERENCES ??"
+	if constraint.OnDelete != "" {
+		sql += " ON DELETE " + constraint.OnDelete
+	}
+
+	if constraint.OnUpdate != "" {
+		sql += " ON UPDATE " + constraint.OnUpdate
+	}
+
+	var foreignKeys, references []interface{}
+	for _, field := range constraint.ForeignKeys {
+		foreignKeys = append(foreignKeys, clause.Column{Name: field.DBName})
+	}
+
+	for _, field := range constraint.References {
+		references = append(references, clause.Column{Name: field.DBName})
+	}
+	results = append(results, clause.Table{Name: constraint.Name}, foreignKeys, clause.Table{Name: constraint.ReferenceSchema.Table}, references)
+	return
+}
+
+func (m Migrator) getRawDDL(table string) (string, error) {
+	var createSQL string
+	m.DB.Raw("SELECT sql FROM sqlite_master WHERE type = ? AND tbl_name = ? AND name = ?", "table", table, table).Row().Scan(&createSQL)
+
+	if m.DB.Error != nil {
+		return "", m.DB.Error
+	}
+	return createSQL, nil
+}
+
+func (m Migrator) recreateTable(value interface{}, tablePtr *string,
+	getCreateSQL func(rawDDL string, stmt *gorm.Statement) (sql string, sqlArgs []interface{}, err error)) error {
+	return m.RunWithValue(value, func(stmt *gorm.Statement) error {
+		table := stmt.Table
+		if tablePtr != nil {
+			table = *tablePtr
+		}
+
+		rawDDL, err := m.getRawDDL(table)
+		if err != nil {
+			return err
+		}
+
+		newTableName := table + "__temp"
+
+		createSQL, sqlArgs, err := getCreateSQL(rawDDL, stmt)
+		if err != nil {
+			return err
+		}
+		if createSQL == "" {
+			return nil
+		}
+
+		tableReg, err := regexp.Compile(" ('|`|\"| )" + table + "('|`|\"| ) ")
+		if err != nil {
+			return err
+		}
+		createSQL = tableReg.ReplaceAllString(createSQL, fmt.Sprintf(" `%v` ", newTableName))
+
+		createDDL, err := parseDDL(createSQL)
+		if err != nil {
+			return err
+		}
+		columns := createDDL.getColumns()
+
+		return m.DB.Transaction(func(tx *gorm.DB) error {
+			queries := []string{
+				createSQL,
+				fmt.Sprintf("INSERT INTO `%v`(%v) SELECT %v FROM `%v`", newTableName, strings.Join(columns, ","), strings.Join(columns, ","), table),
+				fmt.Sprintf("DROP TABLE `%v`", table),
+				fmt.Sprintf("ALTER TABLE `%v` RENAME TO `%v`", newTableName, table),
+			}
+			for _, query := range queries {
+				if err := tx.Exec(query, sqlArgs...).Error; err != nil {
+					return err
+				}
+			}
+			return nil
+		})
 	})
 }
