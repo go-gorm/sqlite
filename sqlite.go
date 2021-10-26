@@ -47,7 +47,6 @@ func (dialector Dialector) Initialize(db *gorm.DB) (err error) {
 		return err
 	}
 
-	// sqlite add returning  in  https://sqlite.org/releaselog/3_35_0.html
 	if compareVersion(version, "3.35.0") >= 0 {
 		callbacks.RegisterDefaultCallbacks(db, &callbacks.Config{
 			CreateClauses:        []string{"INSERT", "VALUES", "ON CONFLICT", "RETURNING"},
