@@ -38,6 +38,8 @@ func (dialector Dialector) Initialize(db *gorm.DB) (err error) {
 
 	// register callbacks
 	callbacks.RegisterDefaultCallbacks(db, &callbacks.Config{
+		CreateClauses:        []string{"INSERT", "VALUES", "ON CONFLICT", "RETURNING"},
+		UpdateClauses:        []string{"UPDATE", "SET", "WHERE", "RETURNING"},
 		LastInsertIDReversed: true,
 	})
 
