@@ -47,8 +47,6 @@ func (dialector Dialector) Initialize(db *gorm.DB) (err error) {
 		return err
 	}
 
-	var c *callbacks.Config
-
 	if compareVersion(version, "3.35.0") >= 0 {
 		callbacks.RegisterDefaultCallbacks(db, &callbacks.Config{
 			CreateClauses:        []string{"INSERT", "VALUES", "ON CONFLICT", "RETURNING"},
