@@ -3,9 +3,10 @@ package sqlite
 import (
 	"context"
 	"database/sql"
-	"gorm.io/gorm/callbacks"
 	"strconv"
 	"strings"
+
+	"gorm.io/gorm/callbacks"
 
 	_ "github.com/mattn/go-sqlite3"
 	"gorm.io/gorm"
@@ -37,13 +38,18 @@ func (dialector Dialector) Initialize(db *gorm.DB) (err error) {
 		dialector.DriverName = DriverName
 	}
 
-	conn, err := sql.Open(dialector.DriverName, dialector.DSN)
-	if err != nil {
-		return err
+	if dialector.Conn != nil {
+		db.ConnPool = dialector.Conn
+	} else {
+		conn, err := sql.Open(dialector.DriverName, dialector.DSN)
+		if err != nil {
+			return err
+		}
+		db.ConnPool = conn
 	}
 
 	var version string
-	if err := conn.QueryRowContext(context.Background(), "select sqlite_version()").Scan(&version); err != nil {
+	if err := db.ConnPool.QueryRowContext(context.Background(), "select sqlite_version()").Scan(&version); err != nil {
 		return err
 	}
 	// https://www.sqlite.org/releaselog/3_35_0.html
@@ -58,12 +64,6 @@ func (dialector Dialector) Initialize(db *gorm.DB) (err error) {
 		callbacks.RegisterDefaultCallbacks(db, &callbacks.Config{
 			LastInsertIDReversed: true,
 		})
-	}
-
-	if dialector.Conn != nil {
-		db.ConnPool = dialector.Conn
-	} else {
-		db.ConnPool = conn
 	}
 
 	for k, v := range dialector.ClauseBuilders() {
