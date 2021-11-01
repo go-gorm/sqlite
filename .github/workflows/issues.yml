@@ -1,0 +1,10 @@
+name: Add issues to project
+on:
+  issues:
+    types:
+      - opened
+jobs:
+  call-workflow:
+    uses: ringsq/.github/.github/workflows/issues.yml@master
+    secrets:
+      R2_GITHUB_TOKEN: ${{ secrets.R2_GITHUB_TOKEN }} 
