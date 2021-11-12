@@ -52,7 +52,7 @@ func (m Migrator) DropTable(values ...interface{}) error {
 }
 
 func (m Migrator) GetTables() (tableList []string, err error) {
-	return tableList, m.DB.Raw("SELECT name FROM sqlite_master  where type=table").Scan(&tableList).Error
+	return tableList, m.DB.Raw("SELECT name FROM sqlite_master where type=?", "table").Scan(&tableList).Error
 }
 
 func (m Migrator) HasColumn(value interface{}, name string) bool {
