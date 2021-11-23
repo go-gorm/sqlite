@@ -350,14 +350,17 @@ func (m Migrator) recreateTable(value interface{}, tablePtr *string,
 		columns := createDDL.getColumns()
 
 		return m.DB.Transaction(func(tx *gorm.DB) error {
+			if err := tx.Exec(createSQL, sqlArgs...).Error; err != nil {
+				return err
+			}
+
 			queries := []string{
-				createSQL,
 				fmt.Sprintf("INSERT INTO `%v`(%v) SELECT %v FROM `%v`", newTableName, strings.Join(columns, ","), strings.Join(columns, ","), table),
 				fmt.Sprintf("DROP TABLE `%v`", table),
 				fmt.Sprintf("ALTER TABLE `%v` RENAME TO `%v`", newTableName, table),
 			}
 			for _, query := range queries {
-				if err := tx.Exec(query, sqlArgs...).Error; err != nil {
+				if err := tx.Exec(query).Error; err != nil {
 					return err
 				}
 			}
