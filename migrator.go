@@ -66,8 +66,8 @@ func (m Migrator) HasColumn(value interface{}, name string) bool {
 
 		if name != "" {
 			m.DB.Raw(
-				"SELECT count(*) FROM sqlite_master WHERE type = ? AND tbl_name = ? AND (sql LIKE ? OR sql LIKE ? OR sql LIKE ?)",
-				"table", stmt.Table, `%"`+name+`" %`, `%`+name+` %`, "%`"+name+"`%",
+				"SELECT count(*) FROM sqlite_master WHERE type = ? AND tbl_name = ? AND (sql LIKE ? OR sql LIKE ? OR sql LIKE ? OR sql LIKE ? OR sql LIKE ?)",
+				"table", stmt.Table, `%"`+name+`" %`, `%`+name+` %`, "%`"+name+"`%", "%["+name+"]%", "%\t"+name+"\t%",
 			).Row().Scan(&count)
 		}
 		return nil
@@ -101,7 +101,7 @@ func (m Migrator) DropColumn(value interface{}, name string) error {
 			name = field.DBName
 		}
 
-		reg, err := regexp.Compile("(`|'|\"| )" + name + "(`|'|\"| ) .*?,")
+		reg, err := regexp.Compile("(`|'|\"| |[)" + name + "(`|'|\"| |]) .*?,")
 		if err != nil {
 			return "", nil, err
 		}
@@ -181,8 +181,8 @@ func (m Migrator) HasConstraint(value interface{}, name string) bool {
 		}
 
 		m.DB.Raw(
-			"SELECT count(*) FROM sqlite_master WHERE type = ? AND tbl_name = ? AND (sql LIKE ? OR sql LIKE ? OR sql LIKE ?)",
-			"table", table, `%CONSTRAINT "`+name+`" %`, `%CONSTRAINT `+name+` %`, "%CONSTRAINT `"+name+"`%",
+			"SELECT count(*) FROM sqlite_master WHERE type = ? AND tbl_name = ? AND (sql LIKE ? OR sql LIKE ? OR sql LIKE ? OR sql LIKE ? OR sql LIKE ?)",
+			"table", table, `%CONSTRAINT "`+name+`" %`, `%CONSTRAINT `+name+` %`, "%CONSTRAINT `"+name+"`%", "%CONSTRAINT ["+name+"]%", "%CONSTRAINT \t"+name+"\t%",
 		).Row().Scan(&count)
 
 		return nil
