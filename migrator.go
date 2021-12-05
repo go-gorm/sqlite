@@ -101,7 +101,7 @@ func (m Migrator) DropColumn(value interface{}, name string) error {
 			name = field.DBName
 		}
 
-		reg, err := regexp.Compile("(`|'|\"| |[)" + name + "(`|'|\"| |]) .*?,")
+		reg, err := regexp.Compile("(`|'|\"| |\\[)" + name + "(`|'|\"| |\\]) .*?,")
 		if err != nil {
 			return "", nil, err
 		}
