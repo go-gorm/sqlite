@@ -96,7 +96,7 @@ func parseDDL(strs ...string) (*ddl, error) {
 						for _, name := range matches[1:] {
 							for idx, column := range result.columns {
 								if column.NameValue.String == name {
-									column.PrimayKeyValue = sql.NullBool{Bool: true, Valid: true}
+									column.PrimaryKeyValue = sql.NullBool{Bool: true, Valid: true}
 									result.columns[idx] = column
 									break
 								}
@@ -105,9 +105,13 @@ func parseDDL(strs ...string) (*ddl, error) {
 					}
 				} else if matches := columnRegexp.FindStringSubmatch(f); len(matches) > 0 {
 					columnType := migrator.ColumnType{
-						NameValue:       sql.NullString{String: matches[1], Valid: true},
-						DataTypeValue:   sql.NullString{String: matches[2], Valid: true},
-						ColumnTypeValue: sql.NullString{String: matches[2], Valid: true},
+						NameValue:         sql.NullString{String: matches[1], Valid: true},
+						DataTypeValue:     sql.NullString{String: matches[2], Valid: true},
+						ColumnTypeValue:   sql.NullString{String: matches[2], Valid: true},
+						PrimaryKeyValue:   sql.NullBool{Valid: true},
+						UniqueValue:       sql.NullBool{Valid: true},
+						NullableValue:     sql.NullBool{Valid: true},
+						DefaultValueValue: sql.NullString{Valid: true},
 					}
 
 					matchUpper := strings.ToUpper(matches[3])
@@ -115,11 +119,14 @@ func parseDDL(strs ...string) (*ddl, error) {
 						columnType.NullableValue = sql.NullBool{Bool: false, Valid: true}
 					} else if strings.Contains(matchUpper, " NULL") {
 						columnType.NullableValue = sql.NullBool{Bool: true, Valid: true}
-					} else if strings.Contains(matchUpper, " UNIQUE") {
+					}
+					if strings.Contains(matchUpper, " UNIQUE") {
 						columnType.UniqueValue = sql.NullBool{Bool: true, Valid: true}
-					} else if strings.Contains(matchUpper, " PRIMARY") {
-						columnType.PrimayKeyValue = sql.NullBool{Bool: true, Valid: true}
-					} else if defaultMatches := defaultValueRegexp.FindStringSubmatch(matches[3]); len(defaultMatches) > 1 {
+					}
+					if strings.Contains(matchUpper, " PRIMARY") {
+						columnType.PrimaryKeyValue = sql.NullBool{Bool: true, Valid: true}
+					}
+					if defaultMatches := defaultValueRegexp.FindStringSubmatch(matches[3]); len(defaultMatches) > 1 {
 						columnType.DefaultValueValue = sql.NullString{String: strings.Trim(defaultMatches[1], `"`), Valid: true}
 					}
 
