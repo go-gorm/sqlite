@@ -180,6 +180,11 @@ func TestGetColumns(t *testing.T) {
 			ddl:     "CREATE TABLE Persons (ID int NOT NULL,LastName varchar(255) NOT NULL,FirstName varchar(255),Age int,CHECK (Age>=18),CHECK (FirstName!='John'))",
 			columns: []string{"`ID`", "`LastName`", "`FirstName`", "`Age`"},
 		},
+		{
+			name:    "with_escaped_quote",
+			ddl:     "CREATE TABLE Persons (ID int NOT NULL,LastName varchar(255) NOT NULL DEFAULT \"\",FirstName varchar(255))",
+			columns: []string{"`ID`", "`LastName`", "`FirstName`"},
+		},
 	}
 
 	for _, p := range params {
