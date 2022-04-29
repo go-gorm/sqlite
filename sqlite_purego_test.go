@@ -21,7 +21,6 @@ func TestDialector(t *testing.T) {
 	const CustomDriverName = "my_custom_driver"
 
 	// Register the custom SQlite3 driver.
-	// It will have one custom function called "my_custom_function".
 	sql.Register(CustomDriverName, &sqlite.Driver{})
 
 	sqlite.MustRegisterDeterministicScalarFunction(
