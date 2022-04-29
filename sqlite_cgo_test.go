@@ -1,3 +1,5 @@
+//+build !purego
+
 package sqlite
 
 import (
