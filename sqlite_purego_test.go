@@ -3,6 +3,7 @@
 package sqlite
 
 import (
+	"database/sql"
 	"database/sql/driver"
 	"fmt"
 	"testing"
@@ -14,6 +15,13 @@ import (
 func TestDialector(t *testing.T) {
 	// This is the DSN of the in-memory SQLite database for these tests.
 	const InMemoryDSN = "file:testdatabase?mode=memory&cache=shared"
+
+	// This is the custom SQLite driver name.
+	const CustomDriverName = "my_custom_driver"
+	
+	// Register the custom SQlite3 driver.
+	// It will have one custom function called "my_custom_function".
+	sql.Register(CustomDriverName, &sqlite.Driver{})
 
 	sqlite.MustRegisterDeterministicScalarFunction(
 		"my_custom_function",
@@ -66,6 +74,16 @@ func TestDialector(t *testing.T) {
 			},
 			openSuccess:  true,
 			query:        "SELECT my_custom_function()",
+			querySuccess: true,
+		},
+		{
+			description: "Custom driver",
+			dialector: &Dialector{
+				DriverName: CustomDriverName,
+				DSN:        InMemoryDSN,
+			},
+			openSuccess:  true,
+			query:        "SELECT 1",
 			querySuccess: true,
 		},
 	}
