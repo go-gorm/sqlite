@@ -1,4 +1,5 @@
-//+build purego
+//go:build purego
+// +build purego
 
 package sqlite
 
@@ -8,8 +9,8 @@ import (
 	"fmt"
 	"testing"
 
-	"modernc.org/sqlite"
 	"gorm.io/gorm"
+	"modernc.org/sqlite"
 )
 
 func TestDialector(t *testing.T) {
@@ -18,7 +19,7 @@ func TestDialector(t *testing.T) {
 
 	// This is the custom SQLite driver name.
 	const CustomDriverName = "my_custom_driver"
-	
+
 	// Register the custom SQlite3 driver.
 	// It will have one custom function called "my_custom_function".
 	sql.Register(CustomDriverName, &sqlite.Driver{})
@@ -29,7 +30,6 @@ func TestDialector(t *testing.T) {
 		func(ctx *sqlite.FunctionContext, args []driver.Value) (driver.Value, error) {
 			return "my-result", nil
 		},
-		
 	)
 
 	rows := []struct {
