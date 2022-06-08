@@ -85,8 +85,12 @@ func (m Migrator) AlterColumn(value interface{}, name string) error {
 					return "", nil, err
 				}
 
+				// Replace the last ")" to be ",)" for the above regex to work
+				rawDDL = rawDDL[:len(rawDDL)-1] + ",)"
 				createSQL := reg.ReplaceAllString(rawDDL, fmt.Sprintf("`%v` ?,", field.DBName))
 
+				// Revert the replacement
+				createSQL = createSQL[:len(createSQL)-2] + ")"
 				return createSQL, []interface{}{m.FullDataTypeOf(field)}, nil
 			}
 			return "", nil, fmt.Errorf("failed to alter field with name %v", name)
