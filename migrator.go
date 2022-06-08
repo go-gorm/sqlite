@@ -80,12 +80,12 @@ func (m Migrator) AlterColumn(value interface{}, name string) error {
 	return m.RunWithoutForeignKey(func() error {
 		return m.recreateTable(value, nil, func(rawDDL string, stmt *gorm.Statement) (sql string, sqlArgs []interface{}, err error) {
 			if field := stmt.Schema.LookUpField(name); field != nil {
-				reg, err := regexp.Compile("(`|'|\"| )" + field.DBName + "(`|'|\"| ) .*?,")
+				reg, err := regexp.Compile("(`|'|\"| )" + field.DBName + "(`|'|\"| ) .*?(,|\\))")
 				if err != nil {
 					return "", nil, err
 				}
 
-				createSQL := reg.ReplaceAllString(rawDDL, fmt.Sprintf("`%v` ?,", field.DBName))
+				createSQL := reg.ReplaceAllString(rawDDL, fmt.Sprintf("`%v` ?$3", field.DBName))
 
 				return createSQL, []interface{}{m.FullDataTypeOf(field)}, nil
 			}
