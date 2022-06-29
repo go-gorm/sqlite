@@ -4,8 +4,8 @@ import (
 	"database/sql"
 	"testing"
 
-	"github.com/stretchr/testify/assert"
 	"gorm.io/gorm/migrator"
+	"gorm.io/gorm/utils/tests"
 )
 
 func TestParseDDL(t *testing.T) {
@@ -52,9 +52,11 @@ func TestParseDDL(t *testing.T) {
 				panic(err.Error())
 			}
 
-			assert.Equal(t, p.sql[0], ddl.compile())
-			assert.Len(t, ddl.fields, p.nFields)
-			assert.Equal(t, ddl.columns, p.columns)
+			tests.AssertEqual(t, p.sql[0], ddl.compile())
+			if len(ddl.fields) != p.nFields {
+				t.Fatalf("fields length doesn't match: expect: %v, got %v", p.nFields, len(ddl.fields))
+			}
+			tests.AssertEqual(t, ddl.columns, p.columns)
 		})
 	}
 }
@@ -122,7 +124,7 @@ func TestAddConstraint(t *testing.T) {
 			testDDL := ddl{fields: p.fields}
 
 			testDDL.addConstraint(p.cName, p.sql)
-			assert.Equal(t, p.expect, testDDL.fields)
+			tests.AssertEqual(t, p.expect, testDDL.fields)
 		})
 	}
 }
@@ -164,8 +166,8 @@ func TestRemoveConstraint(t *testing.T) {
 
 			success := testDDL.removeConstraint(p.cName)
 
-			assert.Equal(t, p.success, success)
-			assert.Equal(t, p.expect, testDDL.fields)
+			tests.AssertEqual(t, p.success, success)
+			tests.AssertEqual(t, p.expect, testDDL.fields)
 		})
 	}
 }
@@ -202,7 +204,7 @@ func TestGetColumns(t *testing.T) {
 
 			cols := testDDL.getColumns()
 
-			assert.Equal(t, p.columns, cols)
+			tests.AssertEqual(t, p.columns, cols)
 		})
 	}
 }
