@@ -116,7 +116,7 @@ func parseDDL(strs ...string) (*ddl, error) {
 						PrimaryKeyValue:   sql.NullBool{Valid: true},
 						UniqueValue:       sql.NullBool{Valid: true},
 						NullableValue:     sql.NullBool{Valid: true},
-						DefaultValueValue: sql.NullString{Valid: true},
+						DefaultValueValue: sql.NullString{Valid: false},
 					}
 
 					matchUpper := strings.ToUpper(matches[3])
