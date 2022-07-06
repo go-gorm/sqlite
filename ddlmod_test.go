@@ -55,7 +55,7 @@ func TestParseDDL(t *testing.T) {
 					DataTypeValue:     sql.NullString{String: "int", Valid: true},
 					ColumnTypeValue:   sql.NullString{String: "int", Valid: true},
 					NullableValue:     sql.NullBool{Bool: false, Valid: true},
-					DefaultValueValue: sql.NullString{Valid: true},
+					DefaultValueValue: sql.NullString{Valid: false},
 					UniqueValue:       sql.NullBool{Valid: true},
 					PrimaryKeyValue:   sql.NullBool{Valid: true},
 				},
