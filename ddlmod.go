@@ -229,3 +229,25 @@ func (d *ddl) getColumns() []string {
 	}
 	return res
 }
+
+func (d *ddl) getSafeColumns() []string {
+	res := []string{}
+
+	for _, f := range d.fields {
+		fUpper := strings.ToUpper(f)
+		if strings.HasPrefix(fUpper, "PRIMARY KEY") ||
+			strings.HasPrefix(fUpper, "CHECK") ||
+			strings.HasPrefix(fUpper, "CONSTRAINT") ||
+			strings.Contains(fUpper, "GENERATED ALWAYS AS") {
+			continue
+		}
+
+		reg := regexp.MustCompile("^[\"`']?([\\w\\d]+)[\"`']?")
+		match := reg.FindStringSubmatch(f)
+
+		if match != nil {
+			res = append(res, "`"+match[1]+"`")
+		}
+	}
+	return res
+}

@@ -227,3 +227,46 @@ func TestGetColumns(t *testing.T) {
 		})
 	}
 }
+
+func TestGetSafeColumns(t *testing.T) {
+	params := []struct {
+		name    string
+		ddl     string
+		columns []string
+	}{
+		{
+			name:    "with_fk",
+			ddl:     "CREATE TABLE `notes` (`id` integer NOT NULL,`text` varchar(500),`user_id` integer,PRIMARY KEY (`id`),CONSTRAINT `fk_users_notes` FOREIGN KEY (`user_id`) REFERENCES `users`(`id`))",
+			columns: []string{"`id`", "`text`", "`user_id`"},
+		},
+		{
+			name:    "with_check",
+			ddl:     "CREATE TABLE Persons (ID int NOT NULL,LastName varchar(255) NOT NULL,FirstName varchar(255),Age int,CHECK (Age>=18),CHECK (FirstName!='John'))",
+			columns: []string{"`ID`", "`LastName`", "`FirstName`", "`Age`"},
+		},
+		{
+			name:    "with_escaped_quote",
+			ddl:     "CREATE TABLE Persons (ID int NOT NULL,LastName varchar(255) NOT NULL DEFAULT \"\",FirstName varchar(255))",
+			columns: []string{"`ID`", "`LastName`", "`FirstName`"},
+		},
+		{
+			name:    "with_generated_column",
+			ddl:     "CREATE TABLE Persons (ID int NOT NULL,LastName varchar(255) NOT NULL,FirstName varchar(255),FullName varchar(255) GENERATED ALWAYS AS (FirstName || ' ' || LastName))",
+			columns: []string{"`ID`", "`LastName`", "`FirstName`"},
+		},
+	}
+
+	for _, p := range params {
+		t.Run(p.name, func(t *testing.T) {
+			testDDL, err := parseDDL(p.ddl)
+			if err != nil {
+				panic(err.Error())
+			}
+
+			cols := testDDL.getSafeColumns()
+
+			tests.AssertEqual(t, p.columns, cols)
+		})
+	}
+}
+
