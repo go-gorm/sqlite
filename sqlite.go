@@ -98,7 +98,7 @@ func (dialector Dialector) ClauseBuilders() map[string]clause.ClauseBuilder {
 		"LIMIT": func(c clause.Clause, builder clause.Builder) {
 			if limit, ok := c.Expression.(clause.Limit); ok {
 				if (limit.Limit != nil && *limit.Limit >= 0) || limit.Offset > 0 {
-					if *limit.Limit <= 0 {
+					if *limit.Limit < 0 {
 						i := -1
 						limit.Limit = &i
 					}
