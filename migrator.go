@@ -400,7 +400,7 @@ func (m Migrator) recreateTable(value interface{}, tablePtr *string,
 		if err != nil {
 			return err
 		}
-		columns := createDDL.getSafeColumns()
+		columns := createDDL.getColumns()
 
 		return m.DB.Transaction(func(tx *gorm.DB) error {
 			if err := tx.Exec(createSQL, sqlArgs...).Error; err != nil {
