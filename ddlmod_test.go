@@ -37,9 +37,9 @@ func TestParseDDL(t *testing.T) {
 		},
 		{"no brackets", []string{"create table test"}, 0, nil},
 		{"with_special_characters", []string{
-			"CREATE TABLE `test` (`text` varchar(10) DEFAULT \"测试，\")",
+			"CREATE TABLE `test` (`text` varchar(10) DEFAULT \"ÊµãËØïÔºå\")",
 		}, 1, []migrator.ColumnType{
-			{NameValue: sql.NullString{String: "text", Valid: true}, DataTypeValue: sql.NullString{String: "varchar", Valid: true}, LengthValue: sql.NullInt64{Int64: 10, Valid: true}, ColumnTypeValue: sql.NullString{String: "varchar(10)", Valid: true}, DefaultValueValue: sql.NullString{String: "测试，", Valid: true}, NullableValue: sql.NullBool{Valid: true}, UniqueValue: sql.NullBool{Valid: true}, PrimaryKeyValue: sql.NullBool{Valid: true}},
+			{NameValue: sql.NullString{String: "text", Valid: true}, DataTypeValue: sql.NullString{String: "varchar", Valid: true}, LengthValue: sql.NullInt64{Int64: 10, Valid: true}, ColumnTypeValue: sql.NullString{String: "varchar(10)", Valid: true}, DefaultValueValue: sql.NullString{String: "ÊµãËØïÔºå", Valid: true}, NullableValue: sql.NullBool{Valid: true}, UniqueValue: sql.NullBool{Valid: true}, PrimaryKeyValue: sql.NullBool{Valid: true}},
 		},
 		},
 		{
@@ -212,6 +212,11 @@ func TestGetColumns(t *testing.T) {
 			ddl:     "CREATE TABLE Persons (ID int NOT NULL,LastName varchar(255) NOT NULL DEFAULT \"\",FirstName varchar(255))",
 			columns: []string{"`ID`", "`LastName`", "`FirstName`"},
 		},
+		{
+			name:    "with_generated_column",
+			ddl:     "CREATE TABLE Persons (ID int NOT NULL,LastName varchar(255) NOT NULL,FirstName varchar(255),FullName varchar(255) GENERATED ALWAYS AS (FirstName || ' ' || LastName))",
+			columns: []string{"`ID`", "`LastName`", "`FirstName`"},
+		},
 	}
 
 	for _, p := range params {
@@ -227,46 +232,3 @@ func TestGetColumns(t *testing.T) {
 		})
 	}
 }
-
-func TestGetSafeColumns(t *testing.T) {
-	params := []struct {
-		name    string
-		ddl     string
-		columns []string
-	}{
-		{
-			name:    "with_fk",
-			ddl:     "CREATE TABLE `notes` (`id` integer NOT NULL,`text` varchar(500),`user_id` integer,PRIMARY KEY (`id`),CONSTRAINT `fk_users_notes` FOREIGN KEY (`user_id`) REFERENCES `users`(`id`))",
-			columns: []string{"`id`", "`text`", "`user_id`"},
-		},
-		{
-			name:    "with_check",
-			ddl:     "CREATE TABLE Persons (ID int NOT NULL,LastName varchar(255) NOT NULL,FirstName varchar(255),Age int,CHECK (Age>=18),CHECK (FirstName!='John'))",
-			columns: []string{"`ID`", "`LastName`", "`FirstName`", "`Age`"},
-		},
-		{
-			name:    "with_escaped_quote",
-			ddl:     "CREATE TABLE Persons (ID int NOT NULL,LastName varchar(255) NOT NULL DEFAULT \"\",FirstName varchar(255))",
-			columns: []string{"`ID`", "`LastName`", "`FirstName`"},
-		},
-		{
-			name:    "with_generated_column",
-			ddl:     "CREATE TABLE Persons (ID int NOT NULL,LastName varchar(255) NOT NULL,FirstName varchar(255),FullName varchar(255) GENERATED ALWAYS AS (FirstName || ' ' || LastName))",
-			columns: []string{"`ID`", "`LastName`", "`FirstName`"},
-		},
-	}
-
-	for _, p := range params {
-		t.Run(p.name, func(t *testing.T) {
-			testDDL, err := parseDDL(p.ddl)
-			if err != nil {
-				panic(err.Error())
-			}
-
-			cols := testDDL.getSafeColumns()
-
-			tests.AssertEqual(t, p.columns, cols)
-		})
-	}
-}
-
