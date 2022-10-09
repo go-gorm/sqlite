@@ -217,6 +217,19 @@ func TestGetColumns(t *testing.T) {
 			ddl:     "CREATE TABLE Persons (ID int NOT NULL,LastName varchar(255) NOT NULL,FirstName varchar(255),FullName varchar(255) GENERATED ALWAYS AS (FirstName || ' ' || LastName))",
 			columns: []string{"`ID`", "`LastName`", "`FirstName`"},
 		},
+		{
+			name: "with_new_line",
+			ddl: `CREATE TABLE "tb_sys_role_menu__temp" (
+  "id" integer  PRIMARY KEY AUTOINCREMENT,
+  "created_at" datetime NOT NULL,
+  "updated_at" datetime NOT NULL,
+  "created_by" integer NOT NULL DEFAULT 0,
+  "updated_by" integer NOT NULL DEFAULT 0,
+  "role_id" integer NOT NULL,
+  "menu_id" bigint NOT NULL
+)`,
+			columns: []string{"`id`", "`created_at`", "`updated_at`", "`created_by`", "`updated_by`", "`role_id`", "`menu_id`"},
+		},
 	}
 
 	for _, p := range params {
