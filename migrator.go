@@ -81,7 +81,7 @@ func (m Migrator) AlterColumn(value interface{}, name string) error {
 		return m.recreateTable(value, nil, func(rawDDL string, stmt *gorm.Statement) (sql string, sqlArgs []interface{}, err error) {
 			if field := stmt.Schema.LookUpField(name); field != nil {
 				// lookup field from table definition, ddl might looks like `'name' int,` or `'name' int)`
-				reg, err := regexp.Compile("(`|'|\"| )" + field.DBName + "(`|'|\"| ) .*?(,|\\)\\s*$)")
+				reg, err := regexp.Compile("(`|'|\"| )?" + field.DBName + "(`|'|\"| )? .*?(,|\\)\\s*$)")
 				if err != nil {
 					return "", nil, err
 				}
@@ -390,7 +390,7 @@ func (m Migrator) recreateTable(value interface{}, tablePtr *string,
 			return nil
 		}
 
-		tableReg, err := regexp.Compile(" ('|`|\"| )" + table + "('|`|\"| ) ")
+		tableReg, err := regexp.Compile(" ('|`|\"| )?" + table + "('|`|\"| )? ")
 		if err != nil {
 			return err
 		}
