@@ -117,14 +117,15 @@ func parseDDL(strs ...string) (*ddl, error) {
 						ColumnTypeValue:   sql.NullString{String: matches[2], Valid: true},
 						PrimaryKeyValue:   sql.NullBool{Valid: true},
 						UniqueValue:       sql.NullBool{Valid: true},
-						NullableValue:     sql.NullBool{Valid: true},
+						
+						:     sql.NullBool{Valid: true},
 						DefaultValueValue: sql.NullString{Valid: false},
 					}
 
 					matchUpper := strings.ToUpper(matches[3])
 					if strings.Contains(matchUpper, " NOT NULL") {
 						columnType.NullableValue = sql.NullBool{Bool: false, Valid: true}
-					} else if strings.Contains(matchUpper, " NULL") {
+					} else {
 						columnType.NullableValue = sql.NullBool{Bool: true, Valid: true}
 					}
 					if strings.Contains(matchUpper, " UNIQUE") {
