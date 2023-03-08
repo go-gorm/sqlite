@@ -1,34 +1,20 @@
 package sqlite
 
 import (
-	"encoding/json"
+	"github.com/mattn/go-sqlite3"
+
 	"gorm.io/gorm"
 )
 
-var errCodes = map[string]int{
+var errCodes = map[string]sqlite3.ErrNoExtended{
 	"uniqueConstraint": 2067,
 }
 
-type ErrMessage struct {
-	Code         int `json:"Code"`
-	ExtendedCode int `json:"ExtendedCode"`
-	SystemErrno  int `json:"SystemErrno"`
-}
-
 func (dialector Dialector) Translate(err error) error {
-	parsedErr, marshalErr := json.Marshal(err)
-	if marshalErr != nil {
-		return err
-	}
-
-	var errMsg ErrMessage
-	unmarshalErr := json.Unmarshal(parsedErr, &errMsg)
-	if unmarshalErr != nil {
-		return err
-	}
-
-	if errMsg.ExtendedCode == errCodes["uniqueConstraint"] {
-		return gorm.ErrDuplicatedKey
+	if sqliteErr, ok := err.(*sqlite3.Error); ok {
+		if sqliteErr.ExtendedCode == errCodes["uniqueConstraint"] {
+			return gorm.ErrDuplicatedKey
+		}
 	}
 
 	return err
