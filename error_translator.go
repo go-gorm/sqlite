@@ -16,6 +16,8 @@ type ErrMessage struct {
 	SystemErrno  int `json:"SystemErrno"`
 }
 
+// Translate it will translate the error to native gorm errors.
+// We are not using go-sqlite3 error type intentionally here because it will need the CGO_ENABLED=1 and cross-C-compiler.
 func (dialector Dialector) Translate(err error) error {
 	parsedErr, marshalErr := json.Marshal(err)
 	if marshalErr != nil {
