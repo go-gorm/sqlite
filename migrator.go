@@ -390,7 +390,7 @@ func (m Migrator) recreateTable(value interface{}, tablePtr *string,
 			return nil
 		}
 
-		tableReg, err := regexp.Compile(" ('|`|\"| )" + table + "('|`|\"| ) ")
+		tableReg, err := regexp.Compile("\\s*('|`|\")?\\b" + table + "\\b('|`|\")?\\s*")
 		if err != nil {
 			return err
 		}

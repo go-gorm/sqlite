@@ -98,6 +98,75 @@ func TestParseDDL(t *testing.T) {
 	}
 }
 
+func TestParseDDL_Whitespaces(t *testing.T) {
+	testColumns := []migrator.ColumnType{
+		{
+			NameValue:         sql.NullString{String: "id", Valid: true},
+			DataTypeValue:     sql.NullString{String: "integer", Valid: true},
+			ColumnTypeValue:   sql.NullString{String: "integer", Valid: true},
+			NullableValue:     sql.NullBool{Bool: false, Valid: true},
+			DefaultValueValue: sql.NullString{Valid: false},
+			UniqueValue:       sql.NullBool{Bool: true, Valid: true},
+			PrimaryKeyValue:   sql.NullBool{Bool: true, Valid: true},
+		},
+		{
+			NameValue:         sql.NullString{String: "dark_mode", Valid: true},
+			DataTypeValue:     sql.NullString{String: "numeric", Valid: true},
+			ColumnTypeValue:   sql.NullString{String: "numeric", Valid: true},
+			NullableValue:     sql.NullBool{Valid: true},
+			DefaultValueValue: sql.NullString{String: "true", Valid: true},
+			UniqueValue:       sql.NullBool{Bool: false, Valid: true},
+			PrimaryKeyValue:   sql.NullBool{Bool: false, Valid: true},
+		},
+	}
+
+	params := []struct {
+		name    string
+		sql     []string
+		nFields int
+		columns []migrator.ColumnType
+	}{
+		{
+			"with_newline",
+			[]string{"CREATE TABLE `users`\n(\nid integer primary key unique,\ndark_mode numeric DEFAULT true)"},
+			2,
+			testColumns,
+		},
+		{
+			"with_newline_2",
+			[]string{"CREATE TABLE `users` (\n\nid integer primary key unique,\ndark_mode numeric DEFAULT true)"},
+			2,
+			testColumns,
+		},
+		{
+			"with_missing_space",
+			[]string{"CREATE TABLE `users`(id integer primary key unique, dark_mode numeric DEFAULT true)"},
+			2,
+			testColumns,
+		},
+		{
+			"with_many_spaces",
+			[]string{"CREATE TABLE `users`       (id    integer   primary key unique,     dark_mode    numeric DEFAULT true)"},
+			2,
+			testColumns,
+		},
+	}
+	for _, p := range params {
+		t.Run(p.name, func(t *testing.T) {
+			ddl, err := parseDDL(p.sql...)
+
+			if err != nil {
+				panic(err.Error())
+			}
+
+			if len(ddl.fields) != p.nFields {
+				t.Fatalf("fields length doesn't match: expect: %v, got %v", p.nFields, len(ddl.fields))
+			}
+			tests.AssertEqual(t, ddl.columns, p.columns)
+		})
+	}
+}
+
 func TestParseDDL_error(t *testing.T) {
 	params := []struct {
 		name string
