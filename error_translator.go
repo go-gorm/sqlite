@@ -6,8 +6,9 @@ import (
 	"gorm.io/gorm"
 )
 
-var errCodes = map[string]int{
-	"uniqueConstraint": 2067,
+var errCodes = map[int]error{
+	2067: gorm.ErrDuplicatedKey,
+	768:  gorm.ErrForeignKeyViolated,
 }
 
 type ErrMessage struct {
@@ -30,8 +31,8 @@ func (dialector Dialector) Translate(err error) error {
 		return err
 	}
 
-	if errMsg.ExtendedCode == errCodes["uniqueConstraint"] {
-		return gorm.ErrDuplicatedKey
+	if translatedErr, found := errCodes[errMsg.ExtendedCode]; found {
+		return translatedErr
 	}
 	return err
 }
