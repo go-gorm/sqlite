@@ -7,6 +7,7 @@ import (
 )
 
 var errCodes = map[int]error{
+	1555: gorm.ErrDuplicatedKey,
 	2067: gorm.ErrDuplicatedKey,
 	768:  gorm.ErrForeignKeyViolated,
 }
