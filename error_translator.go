@@ -8,7 +8,7 @@ import (
 
 var errCodes = map[int]error{
 	2067: gorm.ErrDuplicatedKey,
-	768:  gorm.ErrForeignKeyViolated,
+	787:  gorm.ErrForeignKeyViolated,
 }
 
 type ErrMessage struct {
