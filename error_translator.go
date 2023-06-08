@@ -6,6 +6,7 @@ import (
 	"gorm.io/gorm"
 )
 
+// The error codes to map sqlite errors to gorm errors, here is a reference about error codes for sqlite https://www.sqlite.org/rescode.html.
 var errCodes = map[int]error{
 	2067: gorm.ErrDuplicatedKey,
 	787:  gorm.ErrForeignKeyViolated,
