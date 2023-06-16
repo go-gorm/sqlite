@@ -167,7 +167,7 @@ func (m Migrator) DropColumn(value interface{}, name string) error {
 
 func (m Migrator) CreateConstraint(value interface{}, name string) error {
 	return m.RunWithValue(value, func(stmt *gorm.Statement) error {
-		constraint, chk, table := m.GuessConstraintAndTable(stmt, name)
+		constraint, table := m.GuessConstraintInterfaceAndTable(stmt, name)
 
 		return m.recreateTable(value, &table,
 			func(rawDDL string, stmt *gorm.Statement) (sql string, sqlArgs []interface{}, err error) {
@@ -178,12 +178,8 @@ func (m Migrator) CreateConstraint(value interface{}, name string) error {
 				)
 
 				if constraint != nil {
-					constraintName = constraint.Name
-					constraintSql, constraintValues = buildConstraint(constraint)
-				} else if chk != nil {
-					constraintName = chk.Name
-					constraintSql = "CONSTRAINT ? CHECK (?)"
-					constraintValues = []interface{}{clause.Column{Name: chk.Name}, clause.Expr{SQL: chk.Constraint}}
+					constraintName = constraint.GetName()
+					constraintSql, constraintValues = constraint.Build()
 				} else {
 					return "", nil, nil
 				}
@@ -202,11 +198,9 @@ func (m Migrator) CreateConstraint(value interface{}, name string) error {
 
 func (m Migrator) DropConstraint(value interface{}, name string) error {
 	return m.RunWithValue(value, func(stmt *gorm.Statement) error {
-		constraint, chk, table := m.GuessConstraintAndTable(stmt, name)
+		constraint, table := m.GuessConstraintInterfaceAndTable(stmt, name)
 		if constraint != nil {
-			name = constraint.Name
-		} else if chk != nil {
-			name = chk.Name
+			name = constraint.GetName()
 		}
 
 		return m.recreateTable(value, &table,
@@ -226,11 +220,9 @@ func (m Migrator) DropConstraint(value interface{}, name string) error {
 func (m Migrator) HasConstraint(value interface{}, name string) bool {
 	var count int64
 	m.RunWithValue(value, func(stmt *gorm.Statement) error {
-		constraint, chk, table := m.GuessConstraintAndTable(stmt, name)
+		constraint, table := m.GuessConstraintInterfaceAndTable(stmt, name)
 		if constraint != nil {
-			name = constraint.Name
-		} else if chk != nil {
-			name = chk.Name
+			name = constraint.GetName()
 		}
 
 		m.DB.Raw(
@@ -340,26 +332,44 @@ func (m Migrator) DropIndex(value interface{}, name string) error {
 	})
 }
 
-func buildConstraint(constraint *schema.Constraint) (sql string, results []interface{}) {
-	sql = "CONSTRAINT ? FOREIGN KEY ? REFERENCES ??"
-	if constraint.OnDelete != "" {
-		sql += " ON DELETE " + constraint.OnDelete
-	}
+type Index struct {
+	Seq     int
+	Name    string
+	Unique  bool
+	Origin  string
+	Partial bool
+}
 
-	if constraint.OnUpdate != "" {
-		sql += " ON UPDATE " + constraint.OnUpdate
-	}
-
-	var foreignKeys, references []interface{}
-	for _, field := range constraint.ForeignKeys {
-		foreignKeys = append(foreignKeys, clause.Column{Name: field.DBName})
-	}
-
-	for _, field := range constraint.References {
-		references = append(references, clause.Column{Name: field.DBName})
-	}
-	results = append(results, clause.Table{Name: constraint.Name}, foreignKeys, clause.Table{Name: constraint.ReferenceSchema.Table}, references)
-	return
+// GetIndexes return Indexes []gorm.Index and execErr error,
+// See the [doc]
+//
+// [doc]: https://www.sqlite.org/pragma.html#pragma_index_list
+func (m Migrator) GetIndexes(value interface{}) ([]gorm.Index, error) {
+	indexes := make([]gorm.Index, 0)
+	err := m.RunWithValue(value, func(stmt *gorm.Statement) error {
+		rst := make([]*Index, 0)
+		if err := m.DB.Debug().Raw(fmt.Sprintf("PRAGMA index_list(%q)", stmt.Table)).Scan(&rst).Error; err != nil {
+			return err
+		}
+		for _, index := range rst {
+			if index.Origin == "u" { // skip the index was created by a UNIQUE constraint
+				continue
+			}
+			var columns []string
+			if err := m.DB.Raw(fmt.Sprintf("SELECT name from PRAGMA_index_info(%q)", index.Name)).Scan(&columns).Error; err != nil { // alias `PRAGMA index_info(?)`
+				return err
+			}
+			indexes = append(indexes, &migrator.Index{
+				TableName:       stmt.Table,
+				NameValue:       index.Name,
+				ColumnList:      columns,
+				PrimaryKeyValue: sql.NullBool{Bool: index.Origin == "pk", Valid: true}, // The exceptions are INTEGER PRIMARY KEY
+				UniqueValue:     sql.NullBool{Bool: index.Unique, Valid: true},
+			})
+		}
+		return nil
+	})
+	return indexes, err
 }
 
 func (m Migrator) getRawDDL(table string) (string, error) {
