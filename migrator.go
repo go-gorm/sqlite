@@ -80,19 +80,29 @@ func (m Migrator) AlterColumn(value interface{}, name string) error {
 	return m.RunWithoutForeignKey(func() error {
 		return m.recreateTable(value, nil, func(rawDDL string, stmt *gorm.Statement) (sql string, sqlArgs []interface{}, err error) {
 			if field := stmt.Schema.LookUpField(name); field != nil {
-				// lookup field from table definition, ddl might looks like `'name' int,` or `'name' int)`
-				reg, err := regexp.Compile("(`|'|\"| )" + field.DBName + "(`|'|\"| ) .*?(,|\\)\\s*$)")
+				createDDL, err := parseDDL(rawDDL)
 				if err != nil {
 					return "", nil, err
 				}
-
-				createSQL := reg.ReplaceAllString(rawDDL, fmt.Sprintf("`%v` ?$3", field.DBName))
-
-				if createSQL == rawDDL {
-					return "", nil, fmt.Errorf("failed to look up field %v from DDL %v", field.DBName, rawDDL)
+				for i, f := range createDDL.fields {
+					if matches := columnRegexp.FindStringSubmatch(f); len(matches) > 0 && matches[1] == field.DBName {
+						createDDL.fields[i] = fmt.Sprintf("`%v` ?", field.DBName)
+						sqlArgs = []interface{}{m.FullDataTypeOf(field)}
+						// table created by old version might look like `CREATE TABLE ? (? varchar(10) UNIQUE)`.
+						// FullDataTypeOf doesn't contain UNIQUE, so we need to add unique constraint.
+						if strings.Contains(strings.ToUpper(matches[3]), " UNIQUE") {
+							uniName := m.DB.NamingStrategy.UniqueName(stmt.Table, field.DBName)
+							uni, _ := m.GuessConstraintInterfaceAndTable(stmt, uniName)
+							if uni != nil {
+								uniSQL, uniArgs := uni.Build()
+								createDDL.addConstraint(uniName, uniSQL)
+								sqlArgs = append(sqlArgs, uniArgs...)
+							}
+						}
+						break
+					}
 				}
-
-				return createSQL, []interface{}{m.FullDataTypeOf(field)}, nil
+				return createDDL.compile(), sqlArgs, nil
 			}
 			return "", nil, fmt.Errorf("failed to alter field with name %v", name)
 		})
