@@ -9,14 +9,17 @@ jobs:
     name: Test
     strategy:
       matrix:
-        go: ['1.20', '1.19', '1.18', '1.17']
+        go: ["^1", "1.20", "1.19", "1.18"]
         platform: [ubuntu-latest] # can not run in windows OS
+        cgo: ["0", "1"]
     runs-on: ubuntu-latest
     steps:
-    - name: Set up Go
-      uses: actions/setup-go@v4
-      with:
-        go-version: ${{ matrix.go }}
-    - uses: actions/checkout@v3
-    - name: Test
-      run: go test -v -cover .
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: ${{ matrix.go }}
+      - uses: actions/checkout@v3
+      - name: Test
+        env:
+          CGO_ENABLED: ${{ matrix.cgo }}
+        run: go test -v -cover .
