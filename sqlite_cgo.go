@@ -1,5 +1,5 @@
-//go:build cgo
-// +build cgo
+//go:build cgo && !pure
+// +build cgo,!pure
 
 package sqlite
 
