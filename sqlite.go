@@ -29,6 +29,11 @@ func Open(dsn string) gorm.Dialector {
 	return &Dialector{DSN: dsn}
 }
 
+// New .
+func New(conn gorm.ConnPool) gorm.Dialector {
+	return &Dialector{Conn: conn}
+}
+
 func (dialector Dialector) Name() string {
 	return "sqlite"
 }
