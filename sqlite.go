@@ -55,7 +55,7 @@ func (dialector Dialector) Initialize(db *gorm.DB) (err error) {
 	if compareVersion(version, "3.35.0") >= 0 {
 		callbacks.RegisterDefaultCallbacks(db, &callbacks.Config{
 			CreateClauses:        []string{"INSERT", "VALUES", "ON CONFLICT", "RETURNING"},
-			UpdateClauses:        []string{"UPDATE", "SET", "WHERE", "RETURNING"},
+			UpdateClauses:        []string{"UPDATE", "SET", "FROM", "WHERE", "RETURNING"},
 			DeleteClauses:        []string{"DELETE", "FROM", "WHERE", "RETURNING"},
 			LastInsertIDReversed: true,
 		})
