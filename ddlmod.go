@@ -125,7 +125,7 @@ func parseDDL(strs ...string) (*ddl, error) {
 						ColumnTypeValue:   sql.NullString{String: matches[2], Valid: true},
 						PrimaryKeyValue:   sql.NullBool{Valid: true},
 						UniqueValue:       sql.NullBool{Valid: true},
-						NullableValue:     sql.NullBool{Valid: true},
+						NullableValue:     sql.NullBool{Bool: true, Valid: true},
 						DefaultValueValue: sql.NullString{Valid: false},
 					}
 
