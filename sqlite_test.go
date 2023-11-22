@@ -1,45 +1,22 @@
 package sqlite
 
 import (
-	"database/sql"
 	"fmt"
 	"testing"
 
-	"github.com/mattn/go-sqlite3"
 	"gorm.io/gorm"
 )
 
-func TestDialector(t *testing.T) {
-	// This is the DSN of the in-memory SQLite database for these tests.
-	const InMemoryDSN = "file:testdatabase?mode=memory&cache=shared"
-	// This is the custom SQLite driver name.
-	const CustomDriverName = "my_custom_driver"
+type testRow struct {
+	description  string
+	dialector    *Dialector
+	openSuccess  bool
+	query        string
+	querySuccess bool
+}
 
-	// Register the custom SQlite3 driver.
-	// It will have one custom function called "my_custom_function".
-	sql.Register(CustomDriverName,
-		&sqlite3.SQLiteDriver{
-			ConnectHook: func(conn *sqlite3.SQLiteConn) error {
-				// Define the `concat` function, since we use this elsewhere.
-				err := conn.RegisterFunc(
-					"my_custom_function",
-					func(arguments ...interface{}) (string, error) {
-						return "my-result", nil // Return a string value.
-					},
-					true,
-				)
-				return err
-			},
-		},
-	)
-
-	rows := []struct {
-		description  string
-		dialector    *Dialector
-		openSuccess  bool
-		query        string
-		querySuccess bool
-	}{
+var (
+	rows = []testRow{
 		{
 			description: "Default driver",
 			dialector: &Dialector{
@@ -68,16 +45,6 @@ func TestDialector(t *testing.T) {
 			openSuccess: false,
 		},
 		{
-			description: "Explicit default driver, custom function",
-			dialector: &Dialector{
-				DriverName: DriverName,
-				DSN:        InMemoryDSN,
-			},
-			openSuccess:  true,
-			query:        "SELECT my_custom_function()",
-			querySuccess: false,
-		},
-		{
 			description: "Custom driver",
 			dialector: &Dialector{
 				DriverName: CustomDriverName,
@@ -87,17 +54,10 @@ func TestDialector(t *testing.T) {
 			query:        "SELECT 1",
 			querySuccess: true,
 		},
-		{
-			description: "Custom driver, custom function",
-			dialector: &Dialector{
-				DriverName: CustomDriverName,
-				DSN:        InMemoryDSN,
-			},
-			openSuccess:  true,
-			query:        "SELECT my_custom_function()",
-			querySuccess: true,
-		},
 	}
+)
+
+func TestDialector(t *testing.T) {
 	for rowIndex, row := range rows {
 		t.Run(fmt.Sprintf("%d/%s", rowIndex, row.description), func(t *testing.T) {
 			db, err := gorm.Open(row.dialector, &gorm.Config{})
