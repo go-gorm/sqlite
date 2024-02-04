@@ -14,7 +14,7 @@ import (
 var (
 	sqliteSeparator    = "`|\"|'|\t"
 	uniqueRegexp       = regexp.MustCompile(fmt.Sprintf(`^CONSTRAINT [%v]?[\w-]+[%v]? UNIQUE (.*)$`, sqliteSeparator, sqliteSeparator))
-	indexRegexp        = regexp.MustCompile(fmt.Sprintf(`(?is)CREATE(?: UNIQUE)? INDEX [%v]?[\w\d-]+[%v]? ON (.*)$`, sqliteSeparator, sqliteSeparator))
+	indexRegexp        = regexp.MustCompile(fmt.Sprintf(`(?is)CREATE(?: UNIQUE)? INDEX [%v]?[\w\d-]+[%v]?(?s:.*?)ON (.*)$`, sqliteSeparator, sqliteSeparator))
 	tableRegexp        = regexp.MustCompile(fmt.Sprintf(`(?is)(CREATE TABLE [%v]?[\w\d-]+[%v]?)(?:\s*\((.*)\))?`, sqliteSeparator, sqliteSeparator))
 	separatorRegexp    = regexp.MustCompile(fmt.Sprintf("[%v]", sqliteSeparator))
 	columnsRegexp      = regexp.MustCompile(fmt.Sprintf(`[(,][%v]?(\w+)[%v]?`, sqliteSeparator, sqliteSeparator))
@@ -138,7 +138,7 @@ func parseDDL(strs ...string) (*ddl, error) {
 						ColumnTypeValue:   sql.NullString{String: matches[2], Valid: true},
 						PrimaryKeyValue:   sql.NullBool{Valid: true},
 						UniqueValue:       sql.NullBool{Valid: true},
-						NullableValue:     sql.NullBool{Valid: true},
+						NullableValue:     sql.NullBool{Bool: true, Valid: true},
 						DefaultValueValue: sql.NullString{Valid: false},
 					}
 
@@ -181,12 +181,39 @@ func parseDDL(strs ...string) (*ddl, error) {
 	return &result, nil
 }
 
+func (d *ddl) clone() *ddl {
+	copied := new(ddl)
+	*copied = *d
+
+	copied.fields = make([]string, len(d.fields))
+	copy(copied.fields, d.fields)
+	copied.columns = make([]migrator.ColumnType, len(d.columns))
+	copy(copied.columns, d.columns)
+
+	return copied
+}
+
 func (d *ddl) compile() string {
 	if len(d.fields) == 0 {
 		return d.head
 	}
 
 	return fmt.Sprintf("%s (%s)", d.head, strings.Join(d.fields, ","))
+}
+
+func (d *ddl) renameTable(dst, src string) error {
+	tableReg, err := regexp.Compile("\\s*('|`|\")?\\b" + regexp.QuoteMeta(src) + "\\b('|`|\")?\\s*")
+	if err != nil {
+		return err
+	}
+
+	replaced := tableReg.ReplaceAllString(d.head, fmt.Sprintf(" `%s` ", dst))
+	if replaced == d.head {
+		return fmt.Errorf("failed to look up tablename `%s` from DDL head '%s'", src, d.head)
+	}
+
+	d.head = replaced
+	return nil
 }
 
 func (d *ddl) addConstraint(name string, sql string) {
@@ -245,4 +272,31 @@ func (d *ddl) getColumns() []string {
 		}
 	}
 	return res
+}
+
+func (d *ddl) alterColumn(name, sql string) bool {
+	reg := regexp.MustCompile("^(`|'|\"| )" + regexp.QuoteMeta(name) + "(`|'|\"| ) .*?$")
+
+	for i := 0; i < len(d.fields); i++ {
+		if reg.MatchString(d.fields[i]) {
+			d.fields[i] = sql
+			return false
+		}
+	}
+
+	d.fields = append(d.fields, sql)
+	return true
+}
+
+func (d *ddl) removeColumn(name string) bool {
+	reg := regexp.MustCompile("^(`|'|\"| )" + regexp.QuoteMeta(name) + "(`|'|\"| ) .*?$")
+
+	for i := 0; i < len(d.fields); i++ {
+		if reg.MatchString(d.fields[i]) {
+			d.fields = append(d.fields[:i], d.fields[i+1:]...)
+			return true
+		}
+	}
+
+	return false
 }
