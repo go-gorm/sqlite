@@ -121,7 +121,8 @@ func parseDDL(strs ...string) (*ddl, error) {
 						}
 					}
 					continue
-				} else if strings.HasPrefix(fUpper, "PRIMARY KEY") {
+				}
+				if strings.HasPrefix(fUpper, "PRIMARY KEY") {
 					for _, name := range getAllColumns(f) {
 						for idx, column := range result.columns {
 							if column.NameValue.String == name {
@@ -272,20 +273,6 @@ func (d *ddl) getColumns() []string {
 		}
 	}
 	return res
-}
-
-func (d *ddl) alterColumn(name, sql string) bool {
-	reg := regexp.MustCompile("^(`|'|\"| )" + regexp.QuoteMeta(name) + "(`|'|\"| ) .*?$")
-
-	for i := 0; i < len(d.fields); i++ {
-		if reg.MatchString(d.fields[i]) {
-			d.fields[i] = sql
-			return false
-		}
-	}
-
-	d.fields = append(d.fields, sql)
-	return true
 }
 
 func (d *ddl) removeColumn(name string) bool {

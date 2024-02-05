@@ -79,14 +79,28 @@ func (m Migrator) AlterColumn(value interface{}, name string) error {
 	return m.RunWithoutForeignKey(func() error {
 		return m.recreateTable(value, nil, func(ddl *ddl, stmt *gorm.Statement) (*ddl, []interface{}, error) {
 			if field := stmt.Schema.LookUpField(name); field != nil {
-				if ddl.alterColumn(field.DBName, fmt.Sprintf("`%s` ?", field.DBName)) {
-					return nil, nil, fmt.Errorf("field `%s` not found in origin ddl, ddl= '%s'", name, ddl.compile())
+				var sqlArgs []interface{}
+				for i, f := range ddl.fields {
+					if matches := columnRegexp.FindStringSubmatch(f); len(matches) > 1 && matches[1] == field.DBName {
+						ddl.fields[i] = fmt.Sprintf("`%v` ?", field.DBName)
+						sqlArgs = []interface{}{m.FullDataTypeOf(field)}
+						// table created by old version might look like `CREATE TABLE ? (? varchar(10) UNIQUE)`.
+						// FullDataTypeOf doesn't contain UNIQUE, so we need to add unique constraint.
+						if strings.Contains(strings.ToUpper(matches[3]), " UNIQUE") {
+							uniName := m.DB.NamingStrategy.UniqueName(stmt.Table, field.DBName)
+							uni, _ := m.GuessConstraintInterfaceAndTable(stmt, uniName)
+							if uni != nil {
+								uniSQL, uniArgs := uni.Build()
+								ddl.addConstraint(uniName, uniSQL)
+								sqlArgs = append(sqlArgs, uniArgs...)
+							}
+						}
+						break
+					}
 				}
-
-				return ddl, []interface{}{m.FullDataTypeOf(field)}, nil
+				return ddl, sqlArgs, nil
 			}
-
-			return nil, nil, fmt.Errorf("failed to alter field with name `%s`", name)
+			return nil, nil, fmt.Errorf("failed to alter field with name %v", name)
 		})
 	})
 }
