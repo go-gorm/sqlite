@@ -4,7 +4,7 @@ go 1.20
 
 require (
 	github.com/mattn/go-sqlite3 v1.14.17
-	gorm.io/gorm v1.25.7-0.20240204074919-46816ad31dde
+	gorm.io/gorm v1.25.7
 )
 
 require (
