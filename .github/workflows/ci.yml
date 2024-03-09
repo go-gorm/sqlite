@@ -9,7 +9,7 @@ jobs:
     name: Test
     strategy:
       matrix:
-        go: ['1.20', '1.19', '1.18', '1.17']
+        go: ['1.21', '1.20', '1.19']
         platform: [ubuntu-latest] # can not run in windows OS
     runs-on: ubuntu-latest
     steps:
