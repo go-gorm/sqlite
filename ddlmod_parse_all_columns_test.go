@@ -23,6 +23,11 @@ func TestParseAllColumns(t *testing.T) {
 			input:    "PRIMARY KEY (カラム1, `カラム2`)",
 			expected: []string{"カラム1", "カラム2"},
 		},
+		{
+			name:     "Column name quoted with []",
+			input:    "PRIMARY KEY ([column1], [column2])",
+			expected: []string{"column1", "column2"},
+		},
 	}
 	for _, tt := range tc {
 		t.Run(tt.name, func(t *testing.T) {

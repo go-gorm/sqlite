@@ -1,6 +1,9 @@
 package sqlite
 
-import "errors"
+import (
+	"errors"
+	"fmt"
+)
 
 type parseAllColumnsState int
 
@@ -34,8 +37,12 @@ func parseAllColumns(in string) ([]string, error) {
 				quote = s[i]
 				continue
 			}
-			if s[i] == ')' {
-				return columns, errors.New("unexpected token in beginning: " + string(s[i]))
+			if s[i] == '[' {
+				state = parseAllColumnsState_ReadingQuotedName
+				quote = ']'
+				continue
+			} else if s[i] == ')' {
+				return columns, fmt.Errorf("unexpected token: %s", string(s[i]))
 			}
 			state = parseAllColumnsState_ReadingRawName
 			name = append(name, s[i])
@@ -51,7 +58,7 @@ func parseAllColumns(in string) ([]string, error) {
 				columns = append(columns, string(name))
 			}
 			if isQuote(s[i]) {
-				return nil, errors.New("unexpected token: quote(" + string(s[i]) + ")")
+				return nil, fmt.Errorf("unexpected token: %s", string(s[i]))
 			}
 			if isSpace(s[i]) {
 				state = parseAllColumnsState_EndOfName
@@ -86,7 +93,7 @@ func parseAllColumns(in string) ([]string, error) {
 				state = parseAllColumnsState_State_End
 				continue
 			}
-			return nil, errors.New("unexpected token: " + string(s[i-2:i+2]))
+			return nil, fmt.Errorf("unexpected token: %s", string(s[i]))
 		case parseAllColumnsState_State_End:
 			break
 		}
