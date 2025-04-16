@@ -3,7 +3,7 @@ module gorm.io/driver/sqlite
 go 1.20
 
 require (
-	github.com/mattn/go-sqlite3 v1.14.22
+	github.com/mattn/go-sqlite3 v1.14.28
 	gorm.io/gorm v1.25.7-0.20240204074919-46816ad31dde
 )
 
