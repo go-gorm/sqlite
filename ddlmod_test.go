@@ -142,6 +142,18 @@ func TestParseDDL(t *testing.T) {
 				},
 			},
 		},
+		{"with a check-like column", []string{"CREATE TABLE Docs (ID int NOT NULL,Checksum text NOT NULL)"}, 2, []migrator.ColumnType{
+			{NameValue: sql.NullString{String: "ID", Valid: true}, DataTypeValue: sql.NullString{String: "int", Valid: true}, ColumnTypeValue: sql.NullString{String: "int", Valid: true}, NullableValue: sql.NullBool{Valid: true}, DefaultValueValue: sql.NullString{Valid: false}, UniqueValue: sql.NullBool{Valid: true}, PrimaryKeyValue: sql.NullBool{Valid: true}},
+			{NameValue: sql.NullString{String: "Checksum", Valid: true}, DataTypeValue: sql.NullString{String: "text", Valid: true}, ColumnTypeValue: sql.NullString{String: "text", Valid: true}, NullableValue: sql.NullBool{Bool: false, Valid: true}, DefaultValueValue: sql.NullString{Valid: false}, UniqueValue: sql.NullBool{Valid: true}, PrimaryKeyValue: sql.NullBool{Valid: true}},
+		}},
+		{"with a constraint-like column", []string{"CREATE TABLE Docs (ID int NOT NULL,constraints text NOT NULL)"}, 2, []migrator.ColumnType{
+			{NameValue: sql.NullString{String: "ID", Valid: true}, DataTypeValue: sql.NullString{String: "int", Valid: true}, ColumnTypeValue: sql.NullString{String: "int", Valid: true}, NullableValue: sql.NullBool{Valid: true}, DefaultValueValue: sql.NullString{Valid: false}, UniqueValue: sql.NullBool{Valid: true}, PrimaryKeyValue: sql.NullBool{Valid: true}},
+			{NameValue: sql.NullString{String: "constraints", Valid: true}, DataTypeValue: sql.NullString{String: "text", Valid: true}, ColumnTypeValue: sql.NullString{String: "text", Valid: true}, NullableValue: sql.NullBool{Bool: false, Valid: true}, DefaultValueValue: sql.NullString{Valid: false}, UniqueValue: sql.NullBool{Valid: true}, PrimaryKeyValue: sql.NullBool{Valid: true}},
+		}},
+		{"with_fk_no_constraint", []string{"CREATE TABLE Docs (ID int NOT NULL,UserID int NOT NULL,FOREIGN KEY (UserID) REFERENCES Users(ID))"}, 3, []migrator.ColumnType{
+			{NameValue: sql.NullString{String: "ID", Valid: true}, DataTypeValue: sql.NullString{String: "int", Valid: true}, ColumnTypeValue: sql.NullString{String: "int", Valid: true}, NullableValue: sql.NullBool{Valid: true}, DefaultValueValue: sql.NullString{Valid: false}, UniqueValue: sql.NullBool{Valid: true}, PrimaryKeyValue: sql.NullBool{Valid: true}},
+			{NameValue: sql.NullString{String: "UserID", Valid: true}, DataTypeValue: sql.NullString{String: "int", Valid: true}, ColumnTypeValue: sql.NullString{String: "int", Valid: true}, NullableValue: sql.NullBool{Valid: true}, DefaultValueValue: sql.NullString{Valid: false}, UniqueValue: sql.NullBool{Valid: true}, PrimaryKeyValue: sql.NullBool{Valid: true}},
+		}},
 	}
 
 	for _, p := range params {
