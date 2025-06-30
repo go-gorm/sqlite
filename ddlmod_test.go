@@ -150,9 +150,17 @@ func TestParseDDL(t *testing.T) {
 			{NameValue: sql.NullString{String: "ID", Valid: true}, DataTypeValue: sql.NullString{String: "int", Valid: true}, ColumnTypeValue: sql.NullString{String: "int", Valid: true}, NullableValue: sql.NullBool{Valid: true}, DefaultValueValue: sql.NullString{Valid: false}, UniqueValue: sql.NullBool{Valid: true}, PrimaryKeyValue: sql.NullBool{Valid: true}},
 			{NameValue: sql.NullString{String: "constraints", Valid: true}, DataTypeValue: sql.NullString{String: "text", Valid: true}, ColumnTypeValue: sql.NullString{String: "text", Valid: true}, NullableValue: sql.NullBool{Bool: false, Valid: true}, DefaultValueValue: sql.NullString{Valid: false}, UniqueValue: sql.NullBool{Valid: true}, PrimaryKeyValue: sql.NullBool{Valid: true}},
 		}},
+		{"with a unique-like column", []string{"CREATE TABLE Docs (ID int NOT NULL,unique_code text NOT NULL)"}, 2, []migrator.ColumnType{
+			{NameValue: sql.NullString{String: "ID", Valid: true}, DataTypeValue: sql.NullString{String: "int", Valid: true}, ColumnTypeValue: sql.NullString{String: "int", Valid: true}, NullableValue: sql.NullBool{Valid: true}, DefaultValueValue: sql.NullString{Valid: false}, UniqueValue: sql.NullBool{Valid: true}, PrimaryKeyValue: sql.NullBool{Valid: true}},
+			{NameValue: sql.NullString{String: "unique_code", Valid: true}, DataTypeValue: sql.NullString{String: "text", Valid: true}, ColumnTypeValue: sql.NullString{String: "text", Valid: true}, NullableValue: sql.NullBool{Bool: false, Valid: true}, DefaultValueValue: sql.NullString{Valid: false}, UniqueValue: sql.NullBool{Valid: true}, PrimaryKeyValue: sql.NullBool{Valid: true}},
+		}},
 		{"with_fk_no_constraint", []string{"CREATE TABLE Docs (ID int NOT NULL,UserID int NOT NULL,FOREIGN KEY (UserID) REFERENCES Users(ID))"}, 3, []migrator.ColumnType{
 			{NameValue: sql.NullString{String: "ID", Valid: true}, DataTypeValue: sql.NullString{String: "int", Valid: true}, ColumnTypeValue: sql.NullString{String: "int", Valid: true}, NullableValue: sql.NullBool{Valid: true}, DefaultValueValue: sql.NullString{Valid: false}, UniqueValue: sql.NullBool{Valid: true}, PrimaryKeyValue: sql.NullBool{Valid: true}},
 			{NameValue: sql.NullString{String: "UserID", Valid: true}, DataTypeValue: sql.NullString{String: "int", Valid: true}, ColumnTypeValue: sql.NullString{String: "int", Valid: true}, NullableValue: sql.NullBool{Valid: true}, DefaultValueValue: sql.NullString{Valid: false}, UniqueValue: sql.NullBool{Valid: true}, PrimaryKeyValue: sql.NullBool{Valid: true}},
+		}},
+		{"with unique without constraint", []string{"CREATE TABLE `users` (`id` text NOT NULL,`email` text NOT NULL,PRIMARY KEY (`id`),UNIQUE (`email`))"}, 4, []migrator.ColumnType{
+			{NameValue: sql.NullString{String: "id", Valid: true}, DataTypeValue: sql.NullString{String: "text", Valid: true}, ColumnTypeValue: sql.NullString{String: "text", Valid: true}, NullableValue: sql.NullBool{Valid: true}, DefaultValueValue: sql.NullString{Valid: false}, UniqueValue: sql.NullBool{Valid: true}, PrimaryKeyValue: sql.NullBool{Valid: true, Bool: true}},
+			{NameValue: sql.NullString{String: "email", Valid: true}, DataTypeValue: sql.NullString{String: "text", Valid: true}, ColumnTypeValue: sql.NullString{String: "text", Valid: true}, NullableValue: sql.NullBool{Valid: true}, DefaultValueValue: sql.NullString{Valid: false}, UniqueValue: sql.NullBool{Valid: true, Bool: true}, PrimaryKeyValue: sql.NullBool{Valid: true}},
 		}},
 	}
 

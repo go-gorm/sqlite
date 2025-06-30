@@ -14,7 +14,7 @@ import (
 var (
 	sqliteSeparator    = "`|\"|'|\t"
 	sqliteColumnQuote  = "`"
-	uniqueRegexp       = regexp.MustCompile(fmt.Sprintf(`^CONSTRAINT [%v]?[\w-]+[%v]? UNIQUE (.*)$`, sqliteSeparator, sqliteSeparator))
+	uniqueRegexp       = regexp.MustCompile(fmt.Sprintf(`^(?:CONSTRAINT [%v]?[\w-]+[%v]? )?UNIQUE (.*)$`, sqliteSeparator, sqliteSeparator))
 	indexRegexp        = regexp.MustCompile(fmt.Sprintf(`(?is)CREATE(?: UNIQUE)? INDEX [%v]?[\w\d-]+[%v]?(?s:.*?)ON (.*)$`, sqliteSeparator, sqliteSeparator))
 	tableRegexp        = regexp.MustCompile(fmt.Sprintf(`(?is)(CREATE TABLE [%v]?[\w\d-]+[%v]?)(?:\s*\((.*)\))?`, sqliteSeparator, sqliteSeparator))
 	checkRegexp        = regexp.MustCompile(`^(?i)CHECK[\s]*\(`)
@@ -98,8 +98,7 @@ func parseDDL(strs ...string) (*ddl, error) {
 				if checkRegexp.MatchString(f) || strings.HasPrefix(fUpper, "FOREIGN KEY") {
 					continue
 				}
-				if constraintRegexp.MatchString(f) {
-					matches := uniqueRegexp.FindStringSubmatch(f)
+				if matches := uniqueRegexp.FindStringSubmatch(f); matches != nil {
 					if len(matches) > 0 {
 						cols, err := parseAllColumns(matches[1])
 						if err == nil && len(cols) == 1 {
@@ -112,6 +111,9 @@ func parseDDL(strs ...string) (*ddl, error) {
 							}
 						}
 					}
+					continue
+				}
+				if constraintRegexp.MatchString(f) {
 					continue
 				}
 				if strings.HasPrefix(fUpper, "PRIMARY KEY") {
@@ -263,7 +265,7 @@ func (d *ddl) getColumns() []string {
 			continue
 		}
 
-		if checkRegexp.MatchString(f) || constraintRegexp.MatchString(f) {
+		if checkRegexp.MatchString(f) || constraintRegexp.MatchString(f) || uniqueRegexp.MatchString(f) {
 			continue
 		}
 
