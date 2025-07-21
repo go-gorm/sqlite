@@ -13,9 +13,12 @@ import (
 
 var (
 	sqliteSeparator    = "`|\"|'|\t"
-	uniqueRegexp       = regexp.MustCompile(fmt.Sprintf(`^CONSTRAINT [%v]?[\w-]+[%v]? UNIQUE (.*)$`, sqliteSeparator, sqliteSeparator))
+	sqliteColumnQuote  = "`"
+	uniqueRegexp       = regexp.MustCompile(fmt.Sprintf(`^(?:CONSTRAINT [%v]?[\w-]+[%v]? )?UNIQUE (.*)$`, sqliteSeparator, sqliteSeparator))
 	indexRegexp        = regexp.MustCompile(fmt.Sprintf(`(?is)CREATE(?: UNIQUE)? INDEX [%v]?[\w\d-]+[%v]?(?s:.*?)ON (.*)$`, sqliteSeparator, sqliteSeparator))
 	tableRegexp        = regexp.MustCompile(fmt.Sprintf(`(?is)(CREATE TABLE [%v]?[\w\d-]+[%v]?)(?:\s*\((.*)\))?`, sqliteSeparator, sqliteSeparator))
+	checkRegexp        = regexp.MustCompile(`^(?i)CHECK[\s]*\(`)
+	constraintRegexp   = regexp.MustCompile(fmt.Sprintf(`^(?i)CONSTRAINT\s+%[1]s[\w\d_]+%[1]s[\s]+`, sqliteColumnQuote))
 	separatorRegexp    = regexp.MustCompile(fmt.Sprintf("[%v]", sqliteSeparator))
 	columnRegexp       = regexp.MustCompile(fmt.Sprintf(`^[%v]?([\w\d]+)[%v]?\s+([\w\(\)\d]+)(.*)$`, sqliteSeparator, sqliteSeparator))
 	defaultValueRegexp = regexp.MustCompile(`(?i) DEFAULT \(?(.+)?\)?( |COLLATE|GENERATED|$)`)
@@ -92,11 +95,10 @@ func parseDDL(strs ...string) (*ddl, error) {
 
 			for _, f := range result.fields {
 				fUpper := strings.ToUpper(f)
-				if strings.HasPrefix(fUpper, "CHECK") {
+				if checkRegexp.MatchString(f) || strings.HasPrefix(fUpper, "FOREIGN KEY") {
 					continue
 				}
-				if strings.HasPrefix(fUpper, "CONSTRAINT") {
-					matches := uniqueRegexp.FindStringSubmatch(f)
+				if matches := uniqueRegexp.FindStringSubmatch(f); matches != nil {
 					if len(matches) > 0 {
 						cols, err := parseAllColumns(matches[1])
 						if err == nil && len(cols) == 1 {
@@ -109,6 +111,9 @@ func parseDDL(strs ...string) (*ddl, error) {
 							}
 						}
 					}
+					continue
+				}
+				if constraintRegexp.MatchString(f) {
 					continue
 				}
 				if strings.HasPrefix(fUpper, "PRIMARY KEY") {
@@ -255,9 +260,12 @@ func (d *ddl) getColumns() []string {
 	for _, f := range d.fields {
 		fUpper := strings.ToUpper(f)
 		if strings.HasPrefix(fUpper, "PRIMARY KEY") ||
-			strings.HasPrefix(fUpper, "CHECK") ||
-			strings.HasPrefix(fUpper, "CONSTRAINT") ||
+			strings.HasPrefix(fUpper, "FOREIGN KEY") ||
 			strings.Contains(fUpper, "GENERATED ALWAYS AS") {
+			continue
+		}
+
+		if checkRegexp.MatchString(f) || constraintRegexp.MatchString(f) || uniqueRegexp.MatchString(f) {
 			continue
 		}
 
