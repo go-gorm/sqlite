@@ -142,6 +142,31 @@ func TestParseDDL(t *testing.T) {
 				},
 			},
 		},
+		{
+			"column name and the column type are separated by a single horizontal tab character",
+			[]string{
+				"CREATE TABLE `test-e` (`field1`\ttext NOT NULL,`field2`\tinteger NOT NULL)",
+			},
+			2,
+			[]migrator.ColumnType{
+				{
+					NameValue:       sql.NullString{String: "field1", Valid: true},
+					DataTypeValue:   sql.NullString{String: "text", Valid: true},
+					ColumnTypeValue: sql.NullString{String: "text", Valid: true},
+					PrimaryKeyValue: sql.NullBool{Bool: false, Valid: true},
+					UniqueValue:     sql.NullBool{Bool: false, Valid: true},
+					NullableValue:   sql.NullBool{Bool: false, Valid: true},
+				},
+				{
+					NameValue:       sql.NullString{String: "field2", Valid: true},
+					DataTypeValue:   sql.NullString{String: "integer", Valid: true},
+					ColumnTypeValue: sql.NullString{String: "integer", Valid: true},
+					PrimaryKeyValue: sql.NullBool{Bool: false, Valid: true},
+					UniqueValue:     sql.NullBool{Bool: false, Valid: true},
+					NullableValue:   sql.NullBool{Bool: false, Valid: true},
+				},
+			},
+		},
 		{"with a check-like column", []string{"CREATE TABLE Docs (ID int NOT NULL,Checksum text NOT NULL)"}, 2, []migrator.ColumnType{
 			{NameValue: sql.NullString{String: "ID", Valid: true}, DataTypeValue: sql.NullString{String: "int", Valid: true}, ColumnTypeValue: sql.NullString{String: "int", Valid: true}, NullableValue: sql.NullBool{Valid: true}, DefaultValueValue: sql.NullString{Valid: false}, UniqueValue: sql.NullBool{Valid: true}, PrimaryKeyValue: sql.NullBool{Valid: true}},
 			{NameValue: sql.NullString{String: "Checksum", Valid: true}, DataTypeValue: sql.NullString{String: "text", Valid: true}, ColumnTypeValue: sql.NullString{String: "text", Valid: true}, NullableValue: sql.NullBool{Bool: false, Valid: true}, DefaultValueValue: sql.NullString{Valid: false}, UniqueValue: sql.NullBool{Valid: true}, PrimaryKeyValue: sql.NullBool{Valid: true}},

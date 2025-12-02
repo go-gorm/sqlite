@@ -12,7 +12,7 @@ import (
 )
 
 var (
-	sqliteSeparator    = "`|\"|'|\t"
+	sqliteSeparator    = "`|\"|'"
 	sqliteColumnQuote  = "`"
 	uniqueRegexp       = regexp.MustCompile(fmt.Sprintf(`^(?:CONSTRAINT [%v]?[\w-]+[%v]? )?UNIQUE (.*)$`, sqliteSeparator, sqliteSeparator))
 	indexRegexp        = regexp.MustCompile(fmt.Sprintf(`(?is)CREATE(?: UNIQUE)? INDEX [%v]?[\w\d-]+[%v]?(?s:.*?)ON (.*)$`, sqliteSeparator, sqliteSeparator))
