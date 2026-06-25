@@ -1,8 +1,10 @@
-# GORM Sqlite Driver
+# GORM SQLite Driver
 
-![CI](https://github.com/go-gorm/sqlite/workflows/CI/badge.svg)
+[![CI](https://github.com/go-gorm/sqlite/workflows/CI/badge.svg)](https://github.com/go-gorm/sqlite/actions)
 
-## USAGE
+The official SQLite driver for [GORM](https://gorm.io), based on [go-sqlite3](https://github.com/mattn/go-sqlite3) (requires CGO).
+
+## Quick Start
 
 ```go
 import (
@@ -10,19 +12,26 @@ import (
   "gorm.io/gorm"
 )
 
-// github.com/mattn/go-sqlite3
 db, err := gorm.Open(sqlite.Open("gorm.db"), &gorm.Config{})
 ```
 
-Checkout [https://gorm.io](https://gorm.io) for details.
+> For full documentation, visit [https://gorm.io](https://gorm.io).
 
-### Pure go Sqlite Driver
+## Pure Go Alternatives
 
-checkout [https://github.com/glebarez/sqlite](https://github.com/glebarez/sqlite) for details
+If you need a CGO-free SQLite driver, the following community projects are available:
+
+| Driver | Repository |
+|--------|------------|
+| [github.com/glebarez/sqlite](https://pkg.go.dev/github.com/glebarez/sqlite) | [github.com/glebarez/sqlite](https://github.com/glebarez/sqlite) |
+| [github.com/libtnb/sqlite](https://pkg.go.dev/github.com/libtnb/sqlite) | [github.com/libtnb/sqlite](https://github.com/libtnb/sqlite) |
+| [github.com/ncruces/go-sqlite3/gormlite](https://pkg.go.dev/github.com/ncruces/go-sqlite3/gormlite) | [github.com/ncruces/go-sqlite3](https://github.com/ncruces/go-sqlite3) |
+
+Usage is identical — simply swap the import path:
 
 ```go
 import (
-  "github.com/glebarez/sqlite"
+  "github.com/glebarez/sqlite" // or "github.com/libtnb/sqlite"
   "gorm.io/gorm"
 )
 
