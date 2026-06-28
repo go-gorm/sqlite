@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"strconv"
+	"strings"
 
 	"gorm.io/gorm/callbacks"
 
@@ -206,6 +207,17 @@ func (dialector Dialector) Explain(sql string, vars ...interface{}) string {
 }
 
 func (dialector Dialector) DataTypeOf(field *schema.Field) string {
+	// Computed (generated) column. SQLite 3.31+ supports STORED generated
+	// columns; the expression is carried by the `generated` tag, separate from
+	// the column type. https://www.sqlite.org/gencol.html
+	if expr, ok := generatedColumnExpr(field); ok {
+		return dialector.dataTypeOf(field) + " GENERATED ALWAYS AS (" + expr + ") STORED"
+	}
+
+	return dialector.dataTypeOf(field)
+}
+
+func (dialector Dialector) dataTypeOf(field *schema.Field) string {
 	switch field.DataType {
 	case schema.Bool:
 		return "numeric"
@@ -267,4 +279,41 @@ func compareVersion(version1, version2 string) int {
 		}
 	}
 	return 0
+}
+
+// generatedColumnExpr returns the expression of a computed (generated) column
+// declared via the `generated` tag, if any. The `identity` keyword is reserved
+// for identity columns (rendered through the dialect's native auto-increment)
+// and is not a computed-column expression.
+func generatedColumnExpr(field *schema.Field) (string, bool) {
+	value, ok := field.TagSettings["GENERATED"]
+	if !ok {
+		return "", false
+	}
+	// Ignore an empty value or a bare `generated` tag, which the tag parser
+	// stores as the upper-cased key, rather than treating it as an expression.
+	if value = strings.TrimSpace(value); value == "" || value == "GENERATED" {
+		return "", false
+	}
+	if isIdentityKeyword(value) {
+		return "", false
+	}
+	return value, true
+}
+
+// isIdentityKeyword reports whether value is the `identity` keyword, optionally
+// combined with the generation mode `always` / `by default`. Any other token
+// means value is a computed-column expression.
+func isIdentityKeyword(value string) bool {
+	identity := false
+	for _, token := range strings.Fields(strings.ToLower(value)) {
+		switch token {
+		case "identity":
+			identity = true
+		case "always", "by", "default":
+		default:
+			return false
+		}
+	}
+	return identity
 }
