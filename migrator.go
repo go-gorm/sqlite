@@ -451,9 +451,15 @@ func (m Migrator) recreateTable(
 			}
 
 			// recreate the saved indexes and triggers; ones referencing a
-			// column that no longer exists cannot apply anymore and are skipped
+			// column that no longer exists cannot apply anymore and are
+			// skipped, any other failure aborts the migration
 			for _, aux := range auxDDLs {
-				_ = tx.Exec(aux).Error
+				if err := tx.Exec(aux).Error; err != nil {
+					if strings.Contains(err.Error(), "no such column") {
+						continue
+					}
+					return err
+				}
 			}
 			return nil
 		})

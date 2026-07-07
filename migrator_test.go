@@ -78,7 +78,9 @@ func TestRecreateTablePreservesIndexesAndTriggers(t *testing.T) {
 	}
 
 	var names []string
-	db.Raw("SELECT name FROM sqlite_master WHERE tbl_name = 'rebuild_idx_table' AND type IN ('index','trigger')").Scan(&names)
+	if err := db.Raw("SELECT name FROM sqlite_master WHERE tbl_name = 'rebuild_idx_table' AND type IN ('index','trigger')").Scan(&names).Error; err != nil {
+		t.Fatalf("querying sqlite_master: %v", err)
+	}
 	got := strings.Join(names, ",")
 	if !strings.Contains(got, "idx_keep") {
 		t.Errorf("index idx_keep lost after DropColumn, remaining: %v", names)
@@ -95,7 +97,9 @@ func TestRecreateTablePreservesIndexesAndTriggers(t *testing.T) {
 		t.Fatal(err)
 	}
 	var auditCount int
-	db.Raw("SELECT count(*) FROM rebuild_audit").Scan(&auditCount)
+	if err := db.Raw("SELECT count(*) FROM rebuild_audit").Scan(&auditCount).Error; err != nil {
+		t.Fatalf("querying rebuild_audit: %v", err)
+	}
 	if auditCount != 1 {
 		t.Errorf("trigger did not fire after rebuild, audit rows = %d", auditCount)
 	}
@@ -121,7 +125,9 @@ func TestRecreateTablePreservesTableOptions(t *testing.T) {
 	}
 
 	var ddl string
-	db.Raw("SELECT sql FROM sqlite_master WHERE type='table' AND name='rebuild_opts_table'").Scan(&ddl)
+	if err := db.Raw("SELECT sql FROM sqlite_master WHERE type='table' AND name='rebuild_opts_table'").Scan(&ddl).Error; err != nil {
+		t.Fatalf("querying sqlite_master: %v", err)
+	}
 	if !strings.Contains(ddl, "WITHOUT ROWID") {
 		t.Errorf("WITHOUT ROWID lost after rebuild: %s", ddl)
 	}
@@ -163,5 +169,12 @@ func openRecreateTestDB(t *testing.T, name string) *gorm.DB {
 	if err != nil {
 		t.Fatalf("gorm.Open: %v", err)
 	}
+	// close the pool so the shared in-memory database is torn down and
+	// repeated runs (go test -count=N) start from a clean state
+	t.Cleanup(func() {
+		if sqlDB, err := db.DB(); err == nil {
+			_ = sqlDB.Close()
+		}
+	})
 	return db
 }
