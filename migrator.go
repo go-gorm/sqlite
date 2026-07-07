@@ -411,6 +411,16 @@ func (m Migrator) recreateTable(
 		columns := createDDL.getColumns()
 		createSQL := createDDL.compile()
 
+		// indexes and triggers are dropped together with the old table; save
+		// their DDL so they can be recreated on the rebuilt table.
+		var auxDDLs []string
+		if err := m.DB.Raw(
+			"SELECT sql FROM sqlite_master WHERE tbl_name = ? AND type IN (?, ?) AND sql IS NOT NULL",
+			table, "index", "trigger",
+		).Scan(&auxDDLs).Error; err != nil {
+			return err
+		}
+
 		return m.DB.Transaction(func(tx *gorm.DB) error {
 			if err := tx.Exec(createSQL, sqlArgs...).Error; err != nil {
 				return err
@@ -419,12 +429,31 @@ func (m Migrator) recreateTable(
 			queries := []string{
 				fmt.Sprintf("INSERT INTO `%v`(%v) SELECT %v FROM `%v`", newTableName, strings.Join(columns, ","), strings.Join(columns, ","), table),
 				fmt.Sprintf("DROP TABLE `%v`", table),
-				fmt.Sprintf("ALTER TABLE `%v` RENAME TO `%v`", newTableName, table),
 			}
 			for _, query := range queries {
 				if err := tx.Exec(query).Error; err != nil {
 					return err
 				}
+			}
+
+			// legacy_alter_table keeps RENAME from re-resolving views that
+			// reference the table; they point at the original name and become
+			// valid again right after the rename.
+			if err := tx.Exec("PRAGMA legacy_alter_table = ON").Error; err != nil {
+				return err
+			}
+			renameErr := tx.Exec(fmt.Sprintf("ALTER TABLE `%v` RENAME TO `%v`", newTableName, table)).Error
+			if err := tx.Exec("PRAGMA legacy_alter_table = OFF").Error; renameErr == nil {
+				renameErr = err
+			}
+			if renameErr != nil {
+				return renameErr
+			}
+
+			// recreate the saved indexes and triggers; ones referencing a
+			// column that no longer exists cannot apply anymore and are skipped
+			for _, aux := range auxDDLs {
+				_ = tx.Exec(aux).Error
 			}
 			return nil
 		})
