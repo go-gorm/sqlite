@@ -171,6 +171,13 @@ func TestMigratorStringTableName(t *testing.T) {
 	if err != nil {
 		t.Fatalf("gorm.Open: %v", err)
 	}
+	// close the pool so the shared in-memory database is torn down and
+	// repeated runs (go test -count=N) start from a clean state
+	t.Cleanup(func() {
+		if sqlDB, err := db.DB(); err == nil {
+			_ = sqlDB.Close()
+		}
+	})
 	if err := db.Exec("CREATE TABLE `string_value_table` (`id` integer, `b` text)").Error; err != nil {
 		t.Fatal(err)
 	}
