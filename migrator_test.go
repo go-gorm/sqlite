@@ -163,6 +163,32 @@ func TestRecreateTableWithView(t *testing.T) {
 	}
 }
 
+// DropColumn and AlterColumn must accept a table-name string like the base
+// GORM migrator and the other dialects do; stmt.Schema is nil in that case
+// and used to cause a nil pointer dereference.
+func TestMigratorStringTableName(t *testing.T) {
+	db, err := gorm.Open(Open("file:migrator_string_value?mode=memory&cache=shared"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("gorm.Open: %v", err)
+	}
+	if err := db.Exec("CREATE TABLE `string_value_table` (`id` integer, `b` text)").Error; err != nil {
+		t.Fatal(err)
+	}
+
+	if err := db.Migrator().DropColumn("string_value_table", "b"); err != nil {
+		t.Errorf("DropColumn with a table-name string: %v", err)
+	}
+	if db.Migrator().HasColumn("string_value_table", "b") {
+		t.Error("column b still present after DropColumn")
+	}
+
+	// AlterColumn needs the model schema to build the new column type; a
+	// table-name string must produce a regular error, not a panic.
+	if err := db.Migrator().AlterColumn("string_value_table", "id"); err == nil {
+		t.Error("AlterColumn with a table-name string: expected an error, got nil")
+	}
+}
+
 func openRecreateTestDB(t *testing.T, name string) *gorm.DB {
 	t.Helper()
 	db, err := gorm.Open(Open("file:"+name+"?mode=memory&cache=shared"), &gorm.Config{})
