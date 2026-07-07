@@ -15,6 +15,13 @@ func TestHasColumnNoFalsePositive(t *testing.T) {
 	if err != nil {
 		t.Fatalf("gorm.Open: %v", err)
 	}
+	// close the pool so the shared in-memory database is torn down and
+	// repeated runs (go test -count=N) start from a clean state
+	t.Cleanup(func() {
+		if sqlDB, err := db.DB(); err == nil {
+			_ = sqlDB.Close()
+		}
+	})
 
 	// name is a substring of first_name in an unquoted DDL
 	if err := db.Exec("CREATE TABLE plaincols (id integer, first_name text)").Error; err != nil {
