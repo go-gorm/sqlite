@@ -178,3 +178,58 @@ func openRecreateTestDB(t *testing.T, name string) *gorm.DB {
 	})
 	return db
 }
+
+type ConstraintParent struct {
+	ID int `gorm:"primaryKey"`
+}
+
+func (ConstraintParent) TableName() string { return "constraint_parents" }
+
+type ConstraintChild struct {
+	ID       int
+	ParentID int
+	Parent   ConstraintParent `gorm:"foreignKey:ParentID"`
+}
+
+func (ConstraintChild) TableName() string { return "constraint_children" }
+
+// CreateConstraint appends the constraint to the field list as a `CONSTRAINT ?
+// FOREIGN KEY ...` placeholder clause; getColumns must not mistake it for a
+// column, or the data copy fails with "no column named CONSTRAINT".
+func TestCreateConstraintPlaceholder(t *testing.T) {
+	db, err := gorm.Open(Open("file:constraint_placeholder?mode=memory&cache=shared"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("gorm.Open: %v", err)
+	}
+	t.Cleanup(func() {
+		if sqlDB, err := db.DB(); err == nil {
+			_ = sqlDB.Close()
+		}
+	})
+
+	if err := db.AutoMigrate(&ConstraintParent{}); err != nil {
+		t.Fatal(err)
+	}
+	// existing table missing the foreign key declared in the model
+	if err := db.Exec("CREATE TABLE `constraint_children` (`id` integer, `parent_id` integer)").Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Exec("INSERT INTO `constraint_children`(`id`,`parent_id`) VALUES (1, NULL)").Error; err != nil {
+		t.Fatal(err)
+	}
+
+	if err := db.AutoMigrate(&ConstraintChild{}); err != nil {
+		t.Fatalf("AutoMigrate adding the missing foreign key: %v", err)
+	}
+
+	var n int
+	if err := db.Raw("SELECT count(*) FROM `constraint_children`").Scan(&n).Error; err != nil {
+		t.Fatal(err)
+	}
+	if n != 1 {
+		t.Errorf("rows after rebuild = %d, want 1", n)
+	}
+	if !db.Migrator().HasConstraint(&ConstraintChild{}, "fk_constraint_children_parent") {
+		t.Error("foreign key constraint missing after AutoMigrate")
+	}
+}
