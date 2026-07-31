@@ -20,9 +20,9 @@ var (
 	checkRegexp        = regexp.MustCompile(`^(?i)CHECK[\s]*\(`)
 	constraintRegexp   = regexp.MustCompile(fmt.Sprintf(`^(?i)CONSTRAINT\s+%[1]s[\w\d_]+%[1]s[\s]+`, sqliteColumnQuote))
 	separatorRegexp    = regexp.MustCompile(fmt.Sprintf("[%v]", sqliteSeparator))
-	columnRegexp       = regexp.MustCompile(fmt.Sprintf(`^[%v]?([\w\d]+)[%v]?\s+([\w\(\)\d]+)(.*)$`, sqliteSeparator, sqliteSeparator))
+	columnRegexp       = regexp.MustCompile(fmt.Sprintf(`^[%v]?([\w\d]+)[%v]?\s+(\w+(?:\([^)]*\))?)(.*)$`, sqliteSeparator, sqliteSeparator))
 	defaultValueRegexp = regexp.MustCompile(`(?i) DEFAULT \(?(.+)?\)?( |COLLATE|GENERATED|$)`)
-	regRealDataType    = regexp.MustCompile(`[^\d](\d+)[^\d]?`)
+	typeSizeRegexp     = regexp.MustCompile(`\((\d+)\s*(?:,\s*(\d+))?\)$`)
 )
 
 type ddl struct {
@@ -160,12 +160,17 @@ func parseDDL(strs ...string) (*ddl, error) {
 						}
 					}
 
-					// data type length
-					matches := regRealDataType.FindAllStringSubmatch(columnType.DataTypeValue.String, -1)
-					if len(matches) == 1 && len(matches[0]) == 2 {
-						size, _ := strconv.Atoi(matches[0][1])
-						columnType.LengthValue = sql.NullInt64{Valid: true, Int64: int64(size)}
-						columnType.DataTypeValue.String = strings.TrimSuffix(columnType.DataTypeValue.String, matches[0][0])
+					// data type length / precision, e.g. varchar(10), decimal(10,2)
+					if sizeMatches := typeSizeRegexp.FindStringSubmatch(columnType.DataTypeValue.String); sizeMatches != nil {
+						size, _ := strconv.Atoi(sizeMatches[1])
+						if sizeMatches[2] != "" {
+							scale, _ := strconv.Atoi(sizeMatches[2])
+							columnType.DecimalSizeValue = sql.NullInt64{Valid: true, Int64: int64(size)}
+							columnType.ScaleValue = sql.NullInt64{Valid: true, Int64: int64(scale)}
+						} else {
+							columnType.LengthValue = sql.NullInt64{Valid: true, Int64: int64(size)}
+						}
+						columnType.DataTypeValue.String = strings.TrimSuffix(columnType.DataTypeValue.String, sizeMatches[0])
 					}
 
 					result.columns = append(result.columns, columnType)
