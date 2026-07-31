@@ -222,7 +222,7 @@ func (dialector Dialector) dataTypeOf(field *schema.Field) string {
 	case schema.Bool:
 		return "numeric"
 	case schema.Int, schema.Uint:
-		if field.AutoIncrement {
+		if field.AutoIncrement && !isCompositePrimaryKey(field) {
 			// doesn't check `PrimaryKey`, to keep backward compatibility
 			// https://www.sqlite.org/autoinc.html
 			return "integer PRIMARY KEY AUTOINCREMENT"
@@ -316,4 +316,13 @@ func isIdentityKeyword(value string) bool {
 		}
 	}
 	return identity
+}
+
+// isCompositePrimaryKey reports whether field is part of a multi-column
+// primary key. AUTOINCREMENT only works on a single-column INTEGER PRIMARY
+// KEY; emitting it for a composite key would silently reduce the primary key
+// to that one column (GORM skips the table-level PRIMARY KEY clause when a
+// field type already contains PRIMARY KEY).
+func isCompositePrimaryKey(field *schema.Field) bool {
+	return field.PrimaryKey && field.Schema != nil && len(field.Schema.PrimaryFields) > 1
 }

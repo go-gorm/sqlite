@@ -178,3 +178,39 @@ func openRecreateTestDB(t *testing.T, name string) *gorm.DB {
 	})
 	return db
 }
+
+type compositeKeyModel struct {
+	A int    `gorm:"primaryKey;autoIncrement"`
+	B string `gorm:"primaryKey"`
+}
+
+func (compositeKeyModel) TableName() string { return "composite_key_models" }
+
+// A composite primary key that includes an auto-increment field must keep all
+// key columns. AUTOINCREMENT only applies to a single-column INTEGER PRIMARY
+// KEY, and emitting it made GORM skip the table-level PRIMARY KEY clause,
+// silently reducing the key to one column.
+func TestCompositePrimaryKeyAutoIncrement(t *testing.T) {
+	db, err := gorm.Open(Open("file:composite_pk?mode=memory&cache=shared"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("gorm.Open: %v", err)
+	}
+	t.Cleanup(func() {
+		if sqlDB, err := db.DB(); err == nil {
+			_ = sqlDB.Close()
+		}
+	})
+
+	if err := db.AutoMigrate(&compositeKeyModel{}); err != nil {
+		t.Fatalf("AutoMigrate: %v", err)
+	}
+	var pkCount int
+	if err := db.Raw("SELECT count(*) FROM pragma_table_info('composite_key_models') WHERE pk > 0").Scan(&pkCount).Error; err != nil {
+		t.Fatal(err)
+	}
+	if pkCount != 2 {
+		var ddl string
+		_ = db.Raw("SELECT sql FROM sqlite_master WHERE type='table' AND name='composite_key_models'").Scan(&ddl).Error
+		t.Errorf("primary key column count = %d, want 2 (DDL: %s)", pkCount, ddl)
+	}
+}
