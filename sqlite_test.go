@@ -3,6 +3,7 @@ package sqlite
 import (
 	"database/sql"
 	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/mattn/go-sqlite3"
@@ -128,5 +129,69 @@ func TestDialector(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestExplainQuotesStrings(t *testing.T) {
+	out := Dialector{}.Explain("SELECT * FROM t WHERE name = ?", "hello")
+	if !strings.Contains(out, "'hello'") {
+		t.Errorf("Explain must quote string literals with single quotes, got: %s", out)
+	}
+}
+
+type explainDefaultModel struct {
+	ID   int
+	Code string `gorm:"default:hello"`
+}
+
+func (explainDefaultModel) TableName() string { return "explain_defaults" }
+
+// GORM embeds string default values into the DDL via Dialector.Explain;
+// parseDDL must strip the single quotes (and double quotes from tables
+// created by older versions) so migrations stay idempotent.
+func TestDefaultValueRoundTrip(t *testing.T) {
+	db, err := gorm.Open(Open("file:explain_defaults?mode=memory&cache=shared"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("gorm.Open: %v", err)
+	}
+	t.Cleanup(func() {
+		if sqlDB, err := db.DB(); err == nil {
+			_ = sqlDB.Close()
+		}
+	})
+
+	if err := db.AutoMigrate(&explainDefaultModel{}); err != nil {
+		t.Fatal(err)
+	}
+	cols, err := db.Migrator().ColumnTypes(&explainDefaultModel{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range cols {
+		if c.Name() == "code" {
+			if dv, ok := c.DefaultValue(); !ok || dv != "hello" {
+				t.Errorf("DefaultValue = (%q,%v), want (hello,true)", dv, ok)
+			}
+		}
+	}
+	// second AutoMigrate must not rebuild the table
+	var before string
+	db.Raw("SELECT sql FROM sqlite_master WHERE type='table' AND name='explain_defaults'").Scan(&before)
+	if err := db.AutoMigrate(&explainDefaultModel{}); err != nil {
+		t.Fatal(err)
+	}
+	var after string
+	db.Raw("SELECT sql FROM sqlite_master WHERE type='table' AND name='explain_defaults'").Scan(&after)
+	if before != after {
+		t.Errorf("DDL changed after second AutoMigrate:\n  before: %s\n  after:  %s", before, after)
+	}
+
+	// double quotes from tables created by older driver versions still parse
+	d, err := parseDDL("CREATE TABLE `legacy` (`code` text DEFAULT \"hi\")")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if dv, ok := d.columns[0].DefaultValue(); !ok || dv != "hi" {
+		t.Errorf("legacy DefaultValue = (%q,%v), want (hi,true)", dv, ok)
 	}
 }

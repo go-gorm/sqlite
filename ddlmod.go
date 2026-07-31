@@ -156,7 +156,9 @@ func parseDDL(strs ...string) (*ddl, error) {
 					}
 					if defaultMatches := defaultValueRegexp.FindStringSubmatch(matches[3]); len(defaultMatches) > 1 {
 						if strings.ToLower(defaultMatches[1]) != "null" {
-							columnType.DefaultValueValue = sql.NullString{String: strings.Trim(defaultMatches[1], `"`), Valid: true}
+							// single quotes are standard SQL string literals,
+							// double quotes come from tables created by older versions
+							columnType.DefaultValueValue = sql.NullString{String: strings.Trim(defaultMatches[1], `'"`), Valid: true}
 						}
 					}
 
