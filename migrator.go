@@ -66,8 +66,8 @@ func (m Migrator) HasColumn(value interface{}, name string) bool {
 
 		if name != "" {
 			m.DB.Raw(
-				"SELECT count(*) FROM sqlite_master WHERE type = ? AND tbl_name = ? AND (sql LIKE ? OR sql LIKE ? OR sql LIKE ? OR sql LIKE ? OR sql LIKE ?)",
-				"table", stmt.Table, `%"`+name+`" %`, `%`+name+` %`, "%`"+name+"`%", "%["+name+"]%", "%\t"+name+"\t%",
+				"SELECT count(*) FROM pragma_table_info(?) WHERE name = ? COLLATE NOCASE",
+				stmt.Table, name,
 			).Row().Scan(&count)
 		}
 		return nil
