@@ -176,12 +176,16 @@ func TestDefaultValueRoundTrip(t *testing.T) {
 	}
 	// second AutoMigrate must not rebuild the table
 	var before string
-	db.Raw("SELECT sql FROM sqlite_master WHERE type='table' AND name='explain_defaults'").Scan(&before)
+	if err := db.Raw("SELECT sql FROM sqlite_master WHERE type='table' AND name='explain_defaults'").Scan(&before).Error; err != nil {
+		t.Fatal(err)
+	}
 	if err := db.AutoMigrate(&explainDefaultModel{}); err != nil {
 		t.Fatal(err)
 	}
 	var after string
-	db.Raw("SELECT sql FROM sqlite_master WHERE type='table' AND name='explain_defaults'").Scan(&after)
+	if err := db.Raw("SELECT sql FROM sqlite_master WHERE type='table' AND name='explain_defaults'").Scan(&after).Error; err != nil {
+		t.Fatal(err)
+	}
 	if before != after {
 		t.Errorf("DDL changed after second AutoMigrate:\n  before: %s\n  after:  %s", before, after)
 	}
@@ -193,5 +197,14 @@ func TestDefaultValueRoundTrip(t *testing.T) {
 	}
 	if dv, ok := d.columns[0].DefaultValue(); !ok || dv != "hi" {
 		t.Errorf("legacy DefaultValue = (%q,%v), want (hi,true)", dv, ok)
+	}
+
+	// only one outer quote pair is stripped; inner quotes survive
+	d, err = parseDDL("CREATE TABLE `q` (`code` text DEFAULT '\"x\"')")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if dv, ok := d.columns[0].DefaultValue(); !ok || dv != `"x"` {
+		t.Errorf(`quoted DefaultValue = (%q,%v), want ("x",true)`, dv, ok)
 	}
 }
