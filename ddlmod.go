@@ -16,7 +16,7 @@ var (
 	sqliteColumnQuote  = "`"
 	uniqueRegexp       = regexp.MustCompile(fmt.Sprintf(`^(?:CONSTRAINT [%v]?[\w-]+[%v]? )?UNIQUE (.*)$`, sqliteSeparator, sqliteSeparator))
 	indexRegexp        = regexp.MustCompile(fmt.Sprintf(`(?is)CREATE(?: UNIQUE)? INDEX [%v]?[\w\d-]+[%v]?(?s:.*?)ON (.*)$`, sqliteSeparator, sqliteSeparator))
-	tableRegexp        = regexp.MustCompile(fmt.Sprintf(`(?is)(CREATE TABLE [%v]?[\w\d-]+[%v]?)(?:\s*\((.*)\))?`, sqliteSeparator, sqliteSeparator))
+	tableRegexp        = regexp.MustCompile(fmt.Sprintf(`(?is)(CREATE TABLE [%v]?[\w\d-]+[%v]?)(?:\s*\((.*)\))?(.*)$`, sqliteSeparator, sqliteSeparator))
 	checkRegexp        = regexp.MustCompile(`^(?i)CHECK[\s]*\(`)
 	constraintRegexp   = regexp.MustCompile(fmt.Sprintf(`^(?i)CONSTRAINT\s+%[1]s[\w\d_]+%[1]s[\s]+`, sqliteColumnQuote))
 	separatorRegexp    = regexp.MustCompile(fmt.Sprintf("[%v]", sqliteSeparator))
@@ -28,6 +28,7 @@ var (
 type ddl struct {
 	head    string
 	fields  []string
+	suffix  string // table options after the column list, e.g. WITHOUT ROWID, STRICT
 	columns []migrator.ColumnType
 }
 
@@ -45,6 +46,7 @@ func parseDDL(strs ...string) (*ddl, error) {
 			ddlBodyRunesLen := len(ddlBodyRunes)
 
 			result.head = sections[1]
+			result.suffix = sections[3]
 
 			for idx := 0; idx < ddlBodyRunesLen; idx++ {
 				var (
@@ -193,10 +195,10 @@ func (d *ddl) clone() *ddl {
 
 func (d *ddl) compile() string {
 	if len(d.fields) == 0 {
-		return d.head
+		return d.head + d.suffix
 	}
 
-	return fmt.Sprintf("%s (%s)", d.head, strings.Join(d.fields, ","))
+	return fmt.Sprintf("%s (%s)%s", d.head, strings.Join(d.fields, ","), d.suffix)
 }
 
 func (d *ddl) renameTable(dst, src string) error {
