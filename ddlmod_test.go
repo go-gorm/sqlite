@@ -532,6 +532,7 @@ func TestConstraintNameQuoting(t *testing.T) {
 		{"brackets", "CREATE TABLE t (a integer, CONSTRAINT [chk_a] CHECK (a > 0))", "chk_a"},
 		{"unquoted", "CREATE TABLE t (a integer, CONSTRAINT chk_a CHECK (a > 0))", "chk_a"},
 		{"hyphenated name", "CREATE TABLE `t` (`a` integer, CONSTRAINT `chk-a` CHECK (`a` > 0))", "chk-a"},
+		{"non-ASCII name", "CREATE TABLE `t` (`a` integer, CONSTRAINT `检查_a` CHECK (`a` > 0))", "检查_a"},
 	}
 	for _, f := range forms {
 		d, err := parseDDL(f.ddl)

@@ -17,7 +17,7 @@ var (
 	indexRegexp        = regexp.MustCompile(fmt.Sprintf(`(?is)CREATE(?: UNIQUE)? INDEX [%v]?[\w\d-]+[%v]?(?s:.*?)ON (.*)$`, sqliteSeparator, sqliteSeparator))
 	tableRegexp        = regexp.MustCompile(fmt.Sprintf(`(?is)(CREATE TABLE [%v]?[\w\d-]+[%v]?)(?:\s*\((.*)\))?(.*)$`, sqliteSeparator, sqliteSeparator))
 	checkRegexp        = regexp.MustCompile(`^(?i)CHECK[\s]*\(`)
-	constraintRegexp   = regexp.MustCompile(fmt.Sprintf(`^(?i)CONSTRAINT\s+(?:[%v\[]?[\w\d_-]+[%v\]]?|\?)\s+`, sqliteSeparator, sqliteSeparator))
+	constraintRegexp   = regexp.MustCompile(fmt.Sprintf(`^(?i)CONSTRAINT\s+(?:[%v\[]?[\p{L}\p{N}_-]+[%v\]]?|\?)\s+`, sqliteSeparator, sqliteSeparator))
 	separatorRegexp    = regexp.MustCompile(fmt.Sprintf("[%v]", sqliteSeparator))
 	columnRegexp       = regexp.MustCompile(fmt.Sprintf(`^[%v]?([\w\d]+)[%v]?\s+(\w+(?:\([^)]*\))?)(.*)$`, sqliteSeparator, sqliteSeparator))
 	defaultValueRegexp = regexp.MustCompile(`(?i) DEFAULT \(?(.+)?\)?( |COLLATE|GENERATED|$)`)
