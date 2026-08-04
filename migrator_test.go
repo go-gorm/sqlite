@@ -400,3 +400,27 @@ type noSuchTableModel struct {
 }
 
 func (noSuchTableModel) TableName() string { return "no_such_table" }
+
+// HasConstraint reports a plain bool, so looking it up on a table that does not
+// exist must simply answer false and leave the caller's session usable.
+func TestHasConstraintMissingTable(t *testing.T) {
+	db, err := gorm.Open(Open("file:hasconstraint_missing?mode=memory&cache=shared"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("gorm.Open: %v", err)
+	}
+	t.Cleanup(func() {
+		if sqlDB, err := db.DB(); err == nil {
+			_ = sqlDB.Close()
+		}
+	})
+
+	if db.Migrator().HasConstraint(&noSuchTableModel{}, "chk_x") {
+		t.Error("HasConstraint on a missing table = true, want false")
+	}
+	if db.Error != nil {
+		t.Errorf("session left with an error: %v", db.Error)
+	}
+	if err := db.Exec("CREATE TABLE hc_probe (id integer)").Error; err != nil {
+		t.Errorf("follow-up statement on the same session failed: %v", err)
+	}
+}

@@ -523,27 +523,56 @@ func TestParseDDL_LowercaseUnique(t *testing.T) {
 }
 
 func TestConstraintNameQuoting(t *testing.T) {
+	forms := []struct {
+		desc, ddl, name string
+	}{
+		{"backquotes", "CREATE TABLE `t` (`a` integer, CONSTRAINT `chk_a` CHECK (`a` > 0))", "chk_a"},
+		{"double quotes", `CREATE TABLE "t" ("a" integer, CONSTRAINT "chk_a" CHECK ("a" > 0))`, "chk_a"},
+		{"single quotes", "CREATE TABLE `t` (`a` integer, CONSTRAINT 'chk_a' CHECK (`a` > 0))", "chk_a"},
+		{"brackets", "CREATE TABLE t (a integer, CONSTRAINT [chk_a] CHECK (a > 0))", "chk_a"},
+		{"unquoted", "CREATE TABLE t (a integer, CONSTRAINT chk_a CHECK (a > 0))", "chk_a"},
+		{"hyphenated name", "CREATE TABLE `t` (`a` integer, CONSTRAINT `chk-a` CHECK (`a` > 0))", "chk-a"},
+	}
+	for _, f := range forms {
+		d, err := parseDDL(f.ddl)
+		if err != nil {
+			t.Fatalf("%s: %v", f.desc, err)
+		}
+		if !d.hasConstraint(f.name) {
+			t.Errorf("%s: constraint %s not matched", f.desc, f.name)
+		}
+		if d.hasConstraint("chk") {
+			t.Errorf("%s: prefix chk must not match", f.desc)
+		}
+		// the clause must not be mistaken for a column, or the rebuild's
+		// data copy fails with "no column named CONSTRAINT"
+		if cols := d.getColumns(); len(cols) != 1 || cols[0] != "`a`" {
+			t.Errorf("%s: getColumns = %v, want [`a`]", f.desc, cols)
+		}
+	}
+}
+
+// removeColumn matches the column name against the raw DDL field, so it has to
+// cope with every identifier quoting form. A false return now makes DropColumn
+// fail, so a missed match is no longer a silent no-op.
+func TestRemoveColumnQuotingForms(t *testing.T) {
 	forms := map[string]string{
-		"backquotes":    "CREATE TABLE `t` (`a` integer, CONSTRAINT `chk_a` CHECK (`a` > 0))",
-		"double quotes": `CREATE TABLE "t" ("a" integer, CONSTRAINT "chk_a" CHECK ("a" > 0))`,
-		"brackets":      "CREATE TABLE t (a integer, CONSTRAINT [chk_a] CHECK (a > 0))",
-		"unquoted":      "CREATE TABLE t (a integer, CONSTRAINT chk_a CHECK (a > 0))",
+		"backquotes":    "CREATE TABLE `t` (`a` integer, `b` text)",
+		"double quotes": `CREATE TABLE "t" ("a" integer, "b" text)`,
+		"single quotes": "CREATE TABLE `t` (`a` integer, 'b' text)",
+		"brackets":      "CREATE TABLE t ([a] integer, [b] text)",
+		"unquoted":      "CREATE TABLE t (a integer, b text)",
 	}
 	for form, ddlSQL := range forms {
 		d, err := parseDDL(ddlSQL)
 		if err != nil {
 			t.Fatalf("%s: %v", form, err)
 		}
-		if !d.hasConstraint("chk_a") {
-			t.Errorf("%s: constraint chk_a not matched", form)
+		if !d.removeColumn("b") {
+			t.Errorf("%s: removeColumn(b) = false, want true", form)
 		}
-		if d.hasConstraint("chk") {
-			t.Errorf("%s: prefix chk must not match", form)
-		}
-		// the clause must not be mistaken for a column, or the rebuild's
-		// data copy fails with "no column named CONSTRAINT"
 		if cols := d.getColumns(); len(cols) != 1 || cols[0] != "`a`" {
-			t.Errorf("%s: getColumns = %v, want [`a`]", form, cols)
+			t.Errorf("%s: getColumns after removal = %v, want [`a`]", form, cols)
 		}
 	}
 }
