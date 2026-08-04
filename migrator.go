@@ -130,7 +130,9 @@ func (m Migrator) ColumnTypes(value interface{}) ([]gorm.ColumnType, error) {
 			return err
 		}
 		defer func() {
-			err = rows.Close()
+			if cerr := rows.Close(); err == nil {
+				err = cerr
+			}
 		}()
 
 		var rawColumnTypes []*sql.ColumnType
