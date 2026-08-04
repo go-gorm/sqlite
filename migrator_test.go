@@ -302,3 +302,101 @@ func TestCompositePrimaryKeyAutoIncrement(t *testing.T) {
 		t.Errorf("primary key column count = %d, want 2 (DDL: %s)", pkCount, ddl)
 	}
 }
+
+// GetTables must not report SQLite internal tables such as sqlite_sequence,
+// which appears as soon as any table uses AUTOINCREMENT.
+func TestGetTablesExcludesInternal(t *testing.T) {
+	db, err := gorm.Open(Open("file:internal_tables?mode=memory&cache=shared"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("gorm.Open: %v", err)
+	}
+	t.Cleanup(func() {
+		if sqlDB, err := db.DB(); err == nil {
+			_ = sqlDB.Close()
+		}
+	})
+
+	if err := db.Exec("CREATE TABLE `seq_table` (`id` integer PRIMARY KEY AUTOINCREMENT)").Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Exec("INSERT INTO `seq_table` DEFAULT VALUES").Error; err != nil {
+		t.Fatal(err)
+	}
+
+	tables, err := db.Migrator().GetTables()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tb := range tables {
+		if strings.HasPrefix(tb, "sqlite_") {
+			t.Errorf("GetTables returned internal table %q", tb)
+		}
+	}
+	if len(tables) != 1 || tables[0] != "seq_table" {
+		t.Errorf("GetTables = %v, want [seq_table]", tables)
+	}
+}
+
+type checkedModel struct {
+	ID  int
+	Age int `gorm:"check:age_positive,age > 0"`
+}
+
+func (checkedModel) TableName() string { return "checked_models" }
+
+// HasConstraint must match the exact constraint name instead of a LIKE
+// substring, and DropColumn must fail for a column that is not in the DDL
+// instead of silently rebuilding an identical table.
+func TestConstraintAndColumnMatching(t *testing.T) {
+	db, err := gorm.Open(Open("file:constraint_matching?mode=memory&cache=shared"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("gorm.Open: %v", err)
+	}
+	t.Cleanup(func() {
+		if sqlDB, err := db.DB(); err == nil {
+			_ = sqlDB.Close()
+		}
+	})
+
+	if err := db.AutoMigrate(&checkedModel{}); err != nil {
+		t.Fatal(err)
+	}
+	if !db.Migrator().HasConstraint(&checkedModel{}, "age_positive") {
+		t.Error("HasConstraint(age_positive) = false, want true")
+	}
+	if db.Migrator().HasConstraint(&checkedModel{}, "age_pos") {
+		t.Error("HasConstraint(age_pos) matched by prefix, want false")
+	}
+
+	// unquoted DDL: the column must still be dropped
+	if err := db.Exec("CREATE TABLE plain_cols (id integer, name text)").Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Migrator().DropColumn(&plainColModel{}, "name"); err != nil {
+		t.Fatalf("DropColumn on unquoted DDL: %v", err)
+	}
+	if db.Migrator().HasColumn(&plainColModel{}, "name") {
+		t.Error("column still present after DropColumn on unquoted DDL")
+	}
+	// a missing column must be an error, not a silent no-op
+	if err := db.Migrator().DropColumn(&plainColModel{}, "missing"); err == nil {
+		t.Error("DropColumn(missing) = nil, want error")
+	}
+	// a missing table must be reported clearly
+	if err := db.Migrator().DropColumn(&noSuchTableModel{}, "col"); err == nil || !strings.Contains(err.Error(), "table not found") {
+		t.Errorf("DropColumn on a missing table = %v, want a table-not-found error", err)
+	}
+}
+
+type plainColModel struct {
+	ID   int
+	Name string
+}
+
+func (plainColModel) TableName() string { return "plain_cols" }
+
+type noSuchTableModel struct {
+	ID int
+}
+
+func (noSuchTableModel) TableName() string { return "no_such_table" }

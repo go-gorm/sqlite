@@ -502,3 +502,43 @@ func TestParseDDL_TypePrecision(t *testing.T) {
 		t.Errorf("ColumnType = %q, want decimal(10,2)", ct)
 	}
 }
+
+func TestParseDDL_LowercaseUnique(t *testing.T) {
+	d, err := parseDDL("CREATE TABLE `t` (`a` text, unique(`a`))")
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, c := range d.columns {
+		if c.NameValue.String == "a" {
+			found = true
+			if uniq, _ := c.Unique(); !uniq {
+				t.Error("lowercase table-level unique(...) not recognized")
+			}
+		}
+	}
+	if !found {
+		t.Fatal("column a was not parsed at all")
+	}
+}
+
+func TestConstraintNameQuoting(t *testing.T) {
+	forms := map[string]string{
+		"backquotes":    "CREATE TABLE `t` (`a` integer, CONSTRAINT `chk_a` CHECK (`a` > 0))",
+		"double quotes": `CREATE TABLE "t" ("a" integer, CONSTRAINT "chk_a" CHECK ("a" > 0))`,
+		"brackets":      "CREATE TABLE t (a integer, CONSTRAINT [chk_a] CHECK (a > 0))",
+		"unquoted":      "CREATE TABLE t (a integer, CONSTRAINT chk_a CHECK (a > 0))",
+	}
+	for form, ddlSQL := range forms {
+		d, err := parseDDL(ddlSQL)
+		if err != nil {
+			t.Fatalf("%s: %v", form, err)
+		}
+		if !d.hasConstraint("chk_a") {
+			t.Errorf("%s: constraint chk_a not matched", form)
+		}
+		if d.hasConstraint("chk") {
+			t.Errorf("%s: prefix chk must not match", form)
+		}
+	}
+}

@@ -13,7 +13,7 @@ import (
 
 var (
 	sqliteSeparator    = "`|\"|'"
-	uniqueRegexp       = regexp.MustCompile(fmt.Sprintf(`^(?:CONSTRAINT [%v]?[\w-]+[%v]? )?UNIQUE (.*)$`, sqliteSeparator, sqliteSeparator))
+	uniqueRegexp       = regexp.MustCompile(fmt.Sprintf(`^(?i)(?:CONSTRAINT [%v]?[\w-]+[%v]? )?UNIQUE\s*(\(.*)$`, sqliteSeparator, sqliteSeparator))
 	indexRegexp        = regexp.MustCompile(fmt.Sprintf(`(?is)CREATE(?: UNIQUE)? INDEX [%v]?[\w\d-]+[%v]?(?s:.*?)ON (.*)$`, sqliteSeparator, sqliteSeparator))
 	tableRegexp        = regexp.MustCompile(fmt.Sprintf(`(?is)(CREATE TABLE [%v]?[\w\d-]+[%v]?)(?:\s*\((.*)\))?(.*)$`, sqliteSeparator, sqliteSeparator))
 	checkRegexp        = regexp.MustCompile(`^(?i)CHECK[\s]*\(`)
@@ -223,7 +223,9 @@ func (d *ddl) renameTable(dst, src string) error {
 }
 
 func compileConstraintRegexp(name string) *regexp.Regexp {
-	return regexp.MustCompile("^(?i:CONSTRAINT)\\s+[\"`]?" + regexp.QuoteMeta(name) + "[\"`\\s]")
+	// the name may be quoted with backquotes, double quotes, single quotes
+	// or brackets, or not at all
+	return regexp.MustCompile("^(?i:CONSTRAINT)\\s+[\"'`\\[]?" + regexp.QuoteMeta(name) + "[\"'`\\]\\s]")
 }
 
 func (d *ddl) addConstraint(name string, sql string) {
@@ -288,7 +290,7 @@ func (d *ddl) getColumns() []string {
 }
 
 func (d *ddl) removeColumn(name string) bool {
-	reg := regexp.MustCompile("^(`|'|\"| )" + regexp.QuoteMeta(name) + "(`|'|\"| ) .*?$")
+	reg := regexp.MustCompile("^[`'\" ]?" + regexp.QuoteMeta(name) + "[`'\" ]")
 
 	for i := 0; i < len(d.fields); i++ {
 		if reg.MatchString(d.fields[i]) {
