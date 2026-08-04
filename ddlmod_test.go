@@ -540,5 +540,44 @@ func TestConstraintNameQuoting(t *testing.T) {
 		if d.hasConstraint("chk") {
 			t.Errorf("%s: prefix chk must not match", form)
 		}
+		// the clause must not be mistaken for a column, or the rebuild's
+		// data copy fails with "no column named CONSTRAINT"
+		if cols := d.getColumns(); len(cols) != 1 || cols[0] != "`a`" {
+			t.Errorf("%s: getColumns = %v, want [`a`]", form, cols)
+		}
+	}
+}
+
+// A table-level UNIQUE constraint marks its columns unique whichever way the
+// constraint name is quoted.
+func TestUniqueConstraintNameQuoting(t *testing.T) {
+	forms := map[string]string{
+		"backquotes":    "CREATE TABLE `t` (`a` integer, CONSTRAINT `u_a` UNIQUE (`a`))",
+		"double quotes": `CREATE TABLE "t" ("a" integer, CONSTRAINT "u_a" UNIQUE ("a"))`,
+		"single quotes": "CREATE TABLE `t` (`a` integer, CONSTRAINT 'u_a' UNIQUE (`a`))",
+		"brackets":      "CREATE TABLE t (a integer, CONSTRAINT [u_a] UNIQUE (a))",
+		"unquoted":      "CREATE TABLE t (a integer, CONSTRAINT u_a UNIQUE (a))",
+	}
+	for form, ddlSQL := range forms {
+		d, err := parseDDL(ddlSQL)
+		if err != nil {
+			t.Fatalf("%s: %v", form, err)
+		}
+		found := false
+		for _, c := range d.columns {
+			if c.NameValue.String != "a" {
+				continue
+			}
+			found = true
+			if uniq, _ := c.Unique(); !uniq {
+				t.Errorf("%s: column a not marked unique", form)
+			}
+		}
+		if !found {
+			t.Fatalf("%s: column a was not parsed at all", form)
+		}
+		if cols := d.getColumns(); len(cols) != 1 || cols[0] != "`a`" {
+			t.Errorf("%s: getColumns = %v, want [`a`]", form, cols)
+		}
 	}
 }
