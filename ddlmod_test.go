@@ -475,3 +475,30 @@ func TestGetColumns(t *testing.T) {
 		})
 	}
 }
+
+func TestParseDDL_TypePrecision(t *testing.T) {
+	d, err := parseDDL("CREATE TABLE `t` (`p` decimal(10,2), `s` decimal(10, 2), `v` varchar(25))")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range d.columns {
+		switch c.NameValue.String {
+		case "p", "s":
+			if c.DataTypeValue.String != "decimal" {
+				t.Errorf("%s: DataType = %q, want decimal", c.NameValue.String, c.DataTypeValue.String)
+			}
+			precision, scale, ok := c.DecimalSize()
+			if !ok || precision != 10 || scale != 2 {
+				t.Errorf("%s: DecimalSize = (%d,%d,%v), want (10,2,true)", c.NameValue.String, precision, scale, ok)
+			}
+		case "v":
+			if length, ok := c.Length(); !ok || length != 25 {
+				t.Errorf("v: Length = (%d,%v), want (25,true)", length, ok)
+			}
+		}
+	}
+	// the full column type is preserved for the first form
+	if ct, _ := d.columns[0].ColumnType(); ct != "decimal(10,2)" {
+		t.Errorf("ColumnType = %q, want decimal(10,2)", ct)
+	}
+}
