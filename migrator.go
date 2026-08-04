@@ -2,6 +2,7 @@ package sqlite
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -52,7 +53,9 @@ func (m Migrator) DropTable(values ...interface{}) error {
 }
 
 func (m Migrator) GetTables() (tableList []string, err error) {
-	return tableList, m.DB.Raw("SELECT name FROM sqlite_master where type=?", "table").Scan(&tableList).Error
+	return tableList, m.DB.Raw(
+		"SELECT name FROM sqlite_master WHERE type = ? AND name NOT LIKE ?", "table", "sqlite_%",
+	).Scan(&tableList).Error
 }
 
 func (m Migrator) HasColumn(value interface{}, name string) bool {
@@ -78,6 +81,9 @@ func (m Migrator) HasColumn(value interface{}, name string) bool {
 func (m Migrator) AlterColumn(value interface{}, name string) error {
 	return m.RunWithoutForeignKey(func() error {
 		return m.recreateTable(value, nil, func(ddl *ddl, stmt *gorm.Statement) (*ddl, []interface{}, error) {
+			if stmt.Schema == nil {
+				return nil, nil, fmt.Errorf("failed to alter field with name %v: model with schema is required", name)
+			}
 			if field := stmt.Schema.LookUpField(name); field != nil {
 				var sqlArgs []interface{}
 				for i, f := range ddl.fields {
@@ -127,7 +133,9 @@ func (m Migrator) ColumnTypes(value interface{}) ([]gorm.ColumnType, error) {
 			return err
 		}
 		defer func() {
-			err = rows.Close()
+			if cerr := rows.Close(); err == nil {
+				err = cerr
+			}
 		}()
 
 		var rawColumnTypes []*sql.ColumnType
@@ -157,11 +165,15 @@ func (m Migrator) ColumnTypes(value interface{}) ([]gorm.ColumnType, error) {
 func (m Migrator) DropColumn(value interface{}, name string) error {
 	return m.RunWithoutForeignKey(func() error {
 		return m.recreateTable(value, nil, func(ddl *ddl, stmt *gorm.Statement) (*ddl, []interface{}, error) {
-			if field := stmt.Schema.LookUpField(name); field != nil {
-				name = field.DBName
+			if stmt.Schema != nil {
+				if field := stmt.Schema.LookUpField(name); field != nil {
+					name = field.DBName
+				}
 			}
 
-			ddl.removeColumn(name)
+			if !ddl.removeColumn(name) {
+				return nil, nil, fmt.Errorf("failed to drop column %v: not found in the DDL of table %v", name, stmt.Table)
+			}
 			return ddl, nil, nil
 		})
 	})
@@ -208,22 +220,29 @@ func (m Migrator) DropConstraint(value interface{}, name string) error {
 }
 
 func (m Migrator) HasConstraint(value interface{}, name string) bool {
-	var count int64
+	var has bool
 	m.RunWithValue(value, func(stmt *gorm.Statement) error {
 		constraint, table := m.GuessConstraintInterfaceAndTable(stmt, name)
 		if constraint != nil {
 			name = constraint.GetName()
 		}
 
-		m.DB.Raw(
-			"SELECT count(*) FROM sqlite_master WHERE type = ? AND tbl_name = ? AND (sql LIKE ? OR sql LIKE ? OR sql LIKE ? OR sql LIKE ? OR sql LIKE ?)",
-			"table", table, `%CONSTRAINT "`+name+`" %`, `%CONSTRAINT `+name+` %`, "%CONSTRAINT `"+name+"`%", "%CONSTRAINT ["+name+"]%", "%CONSTRAINT \t"+name+"\t%",
-		).Row().Scan(&count)
-
+		// the result is a plain bool, so a missing table or a DDL this parser
+		// cannot read means "no such constraint" rather than an error to
+		// propagate; returning one here would only be discarded below
+		rawDDL, err := m.getRawDDL(table)
+		if err != nil {
+			return nil
+		}
+		parsed, err := parseDDL(rawDDL)
+		if err != nil {
+			return nil
+		}
+		has = parsed.hasConstraint(name)
 		return nil
 	})
 
-	return count > 0
+	return has
 }
 
 func (m Migrator) CurrentDatabase() (name string) {
@@ -367,10 +386,13 @@ func (m Migrator) GetIndexes(value interface{}) ([]gorm.Index, error) {
 
 func (m Migrator) getRawDDL(table string) (string, error) {
 	var createSQL string
-	m.DB.Raw("SELECT sql FROM sqlite_master WHERE type = ? AND tbl_name = ? AND name = ?", "table", table, table).Row().Scan(&createSQL)
+	err := m.DB.Raw("SELECT sql FROM sqlite_master WHERE type = ? AND tbl_name = ? AND name = ?", "table", table, table).Row().Scan(&createSQL)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return "", err
+	}
 
-	if m.DB.Error != nil {
-		return "", m.DB.Error
+	if createSQL == "" {
+		return "", fmt.Errorf("failed to get DDL of table %q: table not found", table)
 	}
 	return createSQL, nil
 }

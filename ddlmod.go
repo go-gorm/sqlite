@@ -13,16 +13,15 @@ import (
 
 var (
 	sqliteSeparator    = "`|\"|'"
-	sqliteColumnQuote  = "`"
-	uniqueRegexp       = regexp.MustCompile(fmt.Sprintf(`^(?:CONSTRAINT [%v]?[\w-]+[%v]? )?UNIQUE (.*)$`, sqliteSeparator, sqliteSeparator))
-	indexRegexp        = regexp.MustCompile(fmt.Sprintf(`(?is)CREATE(?: UNIQUE)? INDEX [%v]?[\w\d-]+[%v]?(?s:.*?)ON (.*)$`, sqliteSeparator, sqliteSeparator))
-	tableRegexp        = regexp.MustCompile(fmt.Sprintf(`(?is)(CREATE TABLE [%v]?[\w\d-]+[%v]?)(?:\s*\((.*)\))?(.*)$`, sqliteSeparator, sqliteSeparator))
+	uniqueRegexp       = regexp.MustCompile(fmt.Sprintf(`^(?i)(?:CONSTRAINT [%v\[]?[\p{L}\p{N}_-]+[%v\]]? )?UNIQUE\s*(\(.*)$`, sqliteSeparator, sqliteSeparator))
+	indexRegexp        = regexp.MustCompile(fmt.Sprintf(`(?is)CREATE(?: UNIQUE)? INDEX [%v\[]?[\p{L}\p{N}_-]+[%v\]]?(?s:.*?)ON (.*)$`, sqliteSeparator, sqliteSeparator))
+	tableRegexp        = regexp.MustCompile(fmt.Sprintf(`(?is)(CREATE TABLE [%v\[]?[\w\d-]+[%v\]]?)(?:\s*\((.*)\))?(.*)$`, sqliteSeparator, sqliteSeparator))
 	checkRegexp        = regexp.MustCompile(`^(?i)CHECK[\s]*\(`)
-	constraintRegexp   = regexp.MustCompile(fmt.Sprintf(`^(?i)CONSTRAINT\s+%[1]s[\w\d_]+%[1]s[\s]+`, sqliteColumnQuote))
+	constraintRegexp   = regexp.MustCompile(fmt.Sprintf(`^(?i)CONSTRAINT\s+(?:[%v\[]?[\p{L}\p{N}_-]+[%v\]]?|\?)\s+`, sqliteSeparator, sqliteSeparator))
 	separatorRegexp    = regexp.MustCompile(fmt.Sprintf("[%v]", sqliteSeparator))
-	columnRegexp       = regexp.MustCompile(fmt.Sprintf(`^[%v]?([\w\d]+)[%v]?\s+([\w\(\)\d]+)(.*)$`, sqliteSeparator, sqliteSeparator))
+	columnRegexp       = regexp.MustCompile(fmt.Sprintf(`^[%v\[]?([\p{L}\p{N}_]+)[%v\]]?\s+(\w+(?:\([^)]*\))?)(.*)$`, sqliteSeparator, sqliteSeparator))
 	defaultValueRegexp = regexp.MustCompile(`(?i) DEFAULT \(?(.+)?\)?( |COLLATE|GENERATED|$)`)
-	regRealDataType    = regexp.MustCompile(`[^\d](\d+)[^\d]?`)
+	typeSizeRegexp     = regexp.MustCompile(`\((\d+)\s*(?:,\s*(\d+))?\)$`)
 )
 
 type ddl struct {
@@ -156,16 +155,23 @@ func parseDDL(strs ...string) (*ddl, error) {
 					}
 					if defaultMatches := defaultValueRegexp.FindStringSubmatch(matches[3]); len(defaultMatches) > 1 {
 						if strings.ToLower(defaultMatches[1]) != "null" {
-							columnType.DefaultValueValue = sql.NullString{String: strings.Trim(defaultMatches[1], `"`), Valid: true}
+							// single quotes are standard SQL string literals,
+							// double quotes come from tables created by older versions
+							columnType.DefaultValueValue = sql.NullString{String: trimQuote(defaultMatches[1]), Valid: true}
 						}
 					}
 
-					// data type length
-					matches := regRealDataType.FindAllStringSubmatch(columnType.DataTypeValue.String, -1)
-					if len(matches) == 1 && len(matches[0]) == 2 {
-						size, _ := strconv.Atoi(matches[0][1])
-						columnType.LengthValue = sql.NullInt64{Valid: true, Int64: int64(size)}
-						columnType.DataTypeValue.String = strings.TrimSuffix(columnType.DataTypeValue.String, matches[0][0])
+					// data type length / precision, e.g. varchar(10), decimal(10,2)
+					if sizeMatches := typeSizeRegexp.FindStringSubmatch(columnType.DataTypeValue.String); sizeMatches != nil {
+						size, _ := strconv.Atoi(sizeMatches[1])
+						if sizeMatches[2] != "" {
+							scale, _ := strconv.Atoi(sizeMatches[2])
+							columnType.DecimalSizeValue = sql.NullInt64{Valid: true, Int64: int64(size)}
+							columnType.ScaleValue = sql.NullInt64{Valid: true, Int64: int64(scale)}
+						} else {
+							columnType.LengthValue = sql.NullInt64{Valid: true, Int64: int64(size)}
+						}
+						columnType.DataTypeValue.String = strings.TrimSuffix(columnType.DataTypeValue.String, sizeMatches[0])
 					}
 
 					result.columns = append(result.columns, columnType)
@@ -202,7 +208,10 @@ func (d *ddl) compile() string {
 }
 
 func (d *ddl) renameTable(dst, src string) error {
-	tableReg, err := regexp.Compile("\\s*('|`|\")?\\b" + regexp.QuoteMeta(src) + "\\b('|`|\")?\\s*")
+	// the name may be quoted with single quotes, backquotes, double quotes or
+	// brackets; the closing bracket has to be consumed too, or the rewritten
+	// head keeps it and yields [`dst`]
+	tableReg, err := regexp.Compile("\\s*('|`|\"|\\[)?\\b" + regexp.QuoteMeta(src) + "\\b('|`|\"|\\])?\\s*")
 	if err != nil {
 		return err
 	}
@@ -217,7 +226,9 @@ func (d *ddl) renameTable(dst, src string) error {
 }
 
 func compileConstraintRegexp(name string) *regexp.Regexp {
-	return regexp.MustCompile("^(?i:CONSTRAINT)\\s+[\"`]?" + regexp.QuoteMeta(name) + "[\"`\\s]")
+	// the name may be quoted with backquotes, double quotes, single quotes
+	// or brackets, or not at all
+	return regexp.MustCompile("^(?i:CONSTRAINT)\\s+[\"'`\\[]?" + regexp.QuoteMeta(name) + "[\"'`\\]\\s]")
 }
 
 func (d *ddl) addConstraint(name string, sql string) {
@@ -271,7 +282,7 @@ func (d *ddl) getColumns() []string {
 			continue
 		}
 
-		reg := regexp.MustCompile("^[\"`']?([\\w\\d]+)[\"`']?")
+		reg := regexp.MustCompile("^[\"`'\\[]?([\\p{L}\\p{N}_]+)[\"`'\\]]?")
 		match := reg.FindStringSubmatch(f)
 
 		if match != nil {
@@ -282,7 +293,7 @@ func (d *ddl) getColumns() []string {
 }
 
 func (d *ddl) removeColumn(name string) bool {
-	reg := regexp.MustCompile("^(`|'|\"| )" + regexp.QuoteMeta(name) + "(`|'|\"| ) .*?$")
+	reg := regexp.MustCompile("^[`'\"\\[ ]?" + regexp.QuoteMeta(name) + "[`'\"\\] ]")
 
 	for i := 0; i < len(d.fields); i++ {
 		if reg.MatchString(d.fields[i]) {
@@ -292,4 +303,15 @@ func (d *ddl) removeColumn(name string) bool {
 	}
 
 	return false
+}
+
+// trimQuote removes one pair of matching outer quotes from a default value
+// literal, so inner quotes of values like '"x"' survive.
+func trimQuote(s string) string {
+	if len(s) >= 2 {
+		if (s[0] == '\'' && s[len(s)-1] == '\'') || (s[0] == '"' && s[len(s)-1] == '"') {
+			return s[1 : len(s)-1]
+		}
+	}
+	return s
 }

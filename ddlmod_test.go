@@ -2,6 +2,8 @@ package sqlite
 
 import (
 	"database/sql"
+	"reflect"
+	"strings"
 	"testing"
 
 	"gorm.io/gorm/migrator"
@@ -473,5 +475,216 @@ func TestGetColumns(t *testing.T) {
 
 			tests.AssertEqual(t, p.columns, cols)
 		})
+	}
+}
+
+func TestParseDDL_TypePrecision(t *testing.T) {
+	d, err := parseDDL("CREATE TABLE `t` (`p` decimal(10,2), `s` decimal(10, 2), `v` varchar(25))")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range d.columns {
+		switch c.NameValue.String {
+		case "p", "s":
+			if c.DataTypeValue.String != "decimal" {
+				t.Errorf("%s: DataType = %q, want decimal", c.NameValue.String, c.DataTypeValue.String)
+			}
+			precision, scale, ok := c.DecimalSize()
+			if !ok || precision != 10 || scale != 2 {
+				t.Errorf("%s: DecimalSize = (%d,%d,%v), want (10,2,true)", c.NameValue.String, precision, scale, ok)
+			}
+		case "v":
+			if length, ok := c.Length(); !ok || length != 25 {
+				t.Errorf("v: Length = (%d,%v), want (25,true)", length, ok)
+			}
+		}
+	}
+	// the full column type is preserved for the first form
+	if ct, _ := d.columns[0].ColumnType(); ct != "decimal(10,2)" {
+		t.Errorf("ColumnType = %q, want decimal(10,2)", ct)
+	}
+}
+
+func TestParseDDL_LowercaseUnique(t *testing.T) {
+	d, err := parseDDL("CREATE TABLE `t` (`a` text, unique(`a`))")
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, c := range d.columns {
+		if c.NameValue.String == "a" {
+			found = true
+			if uniq, _ := c.Unique(); !uniq {
+				t.Error("lowercase table-level unique(...) not recognized")
+			}
+		}
+	}
+	if !found {
+		t.Fatal("column a was not parsed at all")
+	}
+}
+
+func TestConstraintNameQuoting(t *testing.T) {
+	forms := []struct {
+		desc, ddl, name string
+	}{
+		{"backquotes", "CREATE TABLE `t` (`a` integer, CONSTRAINT `chk_a` CHECK (`a` > 0))", "chk_a"},
+		{"double quotes", `CREATE TABLE "t" ("a" integer, CONSTRAINT "chk_a" CHECK ("a" > 0))`, "chk_a"},
+		{"single quotes", "CREATE TABLE `t` (`a` integer, CONSTRAINT 'chk_a' CHECK (`a` > 0))", "chk_a"},
+		{"brackets", "CREATE TABLE t (a integer, CONSTRAINT [chk_a] CHECK (a > 0))", "chk_a"},
+		{"unquoted", "CREATE TABLE t (a integer, CONSTRAINT chk_a CHECK (a > 0))", "chk_a"},
+		{"hyphenated name", "CREATE TABLE `t` (`a` integer, CONSTRAINT `chk-a` CHECK (`a` > 0))", "chk-a"},
+		{"non-ASCII name", "CREATE TABLE `t` (`a` integer, CONSTRAINT `检查_a` CHECK (`a` > 0))", "检查_a"},
+	}
+	for _, f := range forms {
+		d, err := parseDDL(f.ddl)
+		if err != nil {
+			t.Fatalf("%s: %v", f.desc, err)
+		}
+		if !d.hasConstraint(f.name) {
+			t.Errorf("%s: constraint %s not matched", f.desc, f.name)
+		}
+		if d.hasConstraint("chk") {
+			t.Errorf("%s: prefix chk must not match", f.desc)
+		}
+		// the clause must not be mistaken for a column, or the rebuild's
+		// data copy fails with "no column named CONSTRAINT"
+		if cols := d.getColumns(); len(cols) != 1 || cols[0] != "`a`" {
+			t.Errorf("%s: getColumns = %v, want [`a`]", f.desc, cols)
+		}
+	}
+}
+
+// Column names carry the same quoting forms as constraint names, and SQLite
+// identifiers are not restricted to ASCII. A column the parser does not see is
+// dropped from the rebuild's copy list, so its data is lost.
+func TestParseDDL_ColumnIdentifiers(t *testing.T) {
+	forms := []struct {
+		desc, ddl string
+		want      []string
+	}{
+		{"backquotes", "CREATE TABLE `t` (`a` integer, `b` text)", []string{"`a`", "`b`"}},
+		{"double quotes", `CREATE TABLE "t" ("a" integer, "b" text)`, []string{"`a`", "`b`"}},
+		{"brackets", "CREATE TABLE t ([a] integer, [b] text)", []string{"`a`", "`b`"}},
+		{"unquoted", "CREATE TABLE t (a integer, b text)", []string{"`a`", "`b`"}},
+		{"non-ASCII", "CREATE TABLE `t` (`用户名` text, `b` integer)", []string{"`用户名`", "`b`"}},
+	}
+	for _, f := range forms {
+		d, err := parseDDL(f.ddl)
+		if err != nil {
+			t.Fatalf("%s: %v", f.desc, err)
+		}
+		if cols := d.getColumns(); !reflect.DeepEqual(cols, f.want) {
+			t.Errorf("%s: getColumns = %v, want %v", f.desc, cols, f.want)
+		}
+		if len(d.columns) != len(f.want) {
+			t.Errorf("%s: parsed %d columns, want %d", f.desc, len(d.columns), len(f.want))
+		}
+	}
+}
+
+// ColumnTypes feeds parseDDL the table DDL together with every index DDL, so an
+// index name the parser cannot read fails the whole call with "invalid DDL".
+func TestParseDDL_IndexIdentifiers(t *testing.T) {
+	forms := map[string]string{
+		"backquotes": "CREATE INDEX `idx_a` ON `t`(`a`)",
+		"brackets":   "CREATE INDEX [idx_a] ON [t]([a])",
+		"unquoted":   "CREATE INDEX idx_a ON t(a)",
+		"non-ASCII":  "CREATE INDEX `索引_a` ON `t`(`a`)",
+		"unique":     "CREATE UNIQUE INDEX [idx_b] ON [t]([b])",
+	}
+	for form, ddlSQL := range forms {
+		if _, err := parseDDL("CREATE TABLE `t` (`a` integer, `b` text)", ddlSQL); err != nil {
+			t.Errorf("%s: %v", form, err)
+		}
+	}
+}
+
+// A bracket-quoted table name must parse and rebuild like the other forms.
+// renameTable has to consume the brackets as well, or the rewritten head
+// becomes [`t__temp`], naming a table with literal backquotes in it.
+func TestParseDDL_TableIdentifiers(t *testing.T) {
+	forms := map[string]string{
+		"backquotes":    "CREATE TABLE `t` (`a` integer, `b` text)",
+		"double quotes": `CREATE TABLE "t" ("a" integer, "b" text)`,
+		"single quotes": "CREATE TABLE 't' (`a` integer, `b` text)",
+		"brackets":      "CREATE TABLE [t] ([a] integer, [b] text)",
+		"unquoted":      "CREATE TABLE t (a integer, b text)",
+	}
+	for form, ddlSQL := range forms {
+		d, err := parseDDL(ddlSQL)
+		if err != nil {
+			t.Fatalf("%s: %v", form, err)
+		}
+		if err := d.renameTable("t__temp", "t"); err != nil {
+			t.Errorf("%s: renameTable: %v", form, err)
+			continue
+		}
+		if !strings.Contains(d.head, "`t__temp`") {
+			t.Errorf("%s: renamed head = %q, want it to quote t__temp", form, d.head)
+		}
+		if strings.ContainsAny(d.head, "[]") {
+			t.Errorf("%s: renamed head still carries the old brackets: %q", form, d.head)
+		}
+	}
+}
+
+// removeColumn matches the column name against the raw DDL field, so it has to
+// cope with every identifier quoting form. A false return now makes DropColumn
+// fail, so a missed match is no longer a silent no-op.
+func TestRemoveColumnQuotingForms(t *testing.T) {
+	forms := map[string]string{
+		"backquotes":    "CREATE TABLE `t` (`a` integer, `b` text)",
+		"double quotes": `CREATE TABLE "t" ("a" integer, "b" text)`,
+		"single quotes": "CREATE TABLE `t` (`a` integer, 'b' text)",
+		"brackets":      "CREATE TABLE t ([a] integer, [b] text)",
+		"unquoted":      "CREATE TABLE t (a integer, b text)",
+	}
+	for form, ddlSQL := range forms {
+		d, err := parseDDL(ddlSQL)
+		if err != nil {
+			t.Fatalf("%s: %v", form, err)
+		}
+		if !d.removeColumn("b") {
+			t.Errorf("%s: removeColumn(b) = false, want true", form)
+		}
+		if cols := d.getColumns(); len(cols) != 1 || cols[0] != "`a`" {
+			t.Errorf("%s: getColumns after removal = %v, want [`a`]", form, cols)
+		}
+	}
+}
+
+// A table-level UNIQUE constraint marks its columns unique whichever way the
+// constraint name is quoted.
+func TestUniqueConstraintNameQuoting(t *testing.T) {
+	forms := map[string]string{
+		"backquotes":    "CREATE TABLE `t` (`a` integer, CONSTRAINT `u_a` UNIQUE (`a`))",
+		"double quotes": `CREATE TABLE "t" ("a" integer, CONSTRAINT "u_a" UNIQUE ("a"))`,
+		"single quotes": "CREATE TABLE `t` (`a` integer, CONSTRAINT 'u_a' UNIQUE (`a`))",
+		"brackets":      "CREATE TABLE t (a integer, CONSTRAINT [u_a] UNIQUE (a))",
+		"unquoted":      "CREATE TABLE t (a integer, CONSTRAINT u_a UNIQUE (a))",
+		"non-ASCII":     "CREATE TABLE `t` (`a` integer, CONSTRAINT `唯一_a` UNIQUE (`a`))",
+	}
+	for form, ddlSQL := range forms {
+		d, err := parseDDL(ddlSQL)
+		if err != nil {
+			t.Fatalf("%s: %v", form, err)
+		}
+		found := false
+		for _, c := range d.columns {
+			if c.NameValue.String != "a" {
+				continue
+			}
+			found = true
+			if uniq, _ := c.Unique(); !uniq {
+				t.Errorf("%s: column a not marked unique", form)
+			}
+		}
+		if !found {
+			t.Fatalf("%s: column a was not parsed at all", form)
+		}
+		if cols := d.getColumns(); len(cols) != 1 || cols[0] != "`a`" {
+			t.Errorf("%s: getColumns = %v, want [`a`]", form, cols)
+		}
 	}
 }

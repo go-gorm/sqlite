@@ -163,6 +163,39 @@ func TestRecreateTableWithView(t *testing.T) {
 	}
 }
 
+// DropColumn and AlterColumn must accept a table-name string like the base
+// GORM migrator and the other dialects do; stmt.Schema is nil in that case
+// and used to cause a nil pointer dereference.
+func TestMigratorStringTableName(t *testing.T) {
+	db, err := gorm.Open(Open("file:migrator_string_value?mode=memory&cache=shared"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("gorm.Open: %v", err)
+	}
+	// close the pool so the shared in-memory database is torn down and
+	// repeated runs (go test -count=N) start from a clean state
+	t.Cleanup(func() {
+		if sqlDB, err := db.DB(); err == nil {
+			_ = sqlDB.Close()
+		}
+	})
+	if err := db.Exec("CREATE TABLE `string_value_table` (`id` integer, `b` text)").Error; err != nil {
+		t.Fatal(err)
+	}
+
+	if err := db.Migrator().DropColumn("string_value_table", "b"); err != nil {
+		t.Errorf("DropColumn with a table-name string: %v", err)
+	}
+	if db.Migrator().HasColumn("string_value_table", "b") {
+		t.Error("column b still present after DropColumn")
+	}
+
+	// AlterColumn needs the model schema to build the new column type; a
+	// table-name string must produce a regular error, not a panic.
+	if err := db.Migrator().AlterColumn("string_value_table", "id"); err == nil {
+		t.Error("AlterColumn with a table-name string: expected an error, got nil")
+	}
+}
+
 func openRecreateTestDB(t *testing.T, name string) *gorm.DB {
 	t.Helper()
 	db, err := gorm.Open(Open("file:"+name+"?mode=memory&cache=shared"), &gorm.Config{})
@@ -177,4 +210,217 @@ func openRecreateTestDB(t *testing.T, name string) *gorm.DB {
 		}
 	})
 	return db
+}
+
+type ConstraintParent struct {
+	ID int `gorm:"primaryKey"`
+}
+
+func (ConstraintParent) TableName() string { return "constraint_parents" }
+
+type ConstraintChild struct {
+	ID       int
+	ParentID int
+	Parent   ConstraintParent `gorm:"foreignKey:ParentID"`
+}
+
+func (ConstraintChild) TableName() string { return "constraint_children" }
+
+// CreateConstraint appends the constraint to the field list as a `CONSTRAINT ?
+// FOREIGN KEY ...` placeholder clause; getColumns must not mistake it for a
+// column, or the data copy fails with "no column named CONSTRAINT".
+func TestCreateConstraintPlaceholder(t *testing.T) {
+	db, err := gorm.Open(Open("file:constraint_placeholder?mode=memory&cache=shared"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("gorm.Open: %v", err)
+	}
+	t.Cleanup(func() {
+		if sqlDB, err := db.DB(); err == nil {
+			_ = sqlDB.Close()
+		}
+	})
+
+	if err := db.AutoMigrate(&ConstraintParent{}); err != nil {
+		t.Fatal(err)
+	}
+	// existing table missing the foreign key declared in the model
+	if err := db.Exec("CREATE TABLE `constraint_children` (`id` integer, `parent_id` integer)").Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Exec("INSERT INTO `constraint_children`(`id`,`parent_id`) VALUES (1, NULL)").Error; err != nil {
+		t.Fatal(err)
+	}
+
+	if err := db.AutoMigrate(&ConstraintChild{}); err != nil {
+		t.Fatalf("AutoMigrate adding the missing foreign key: %v", err)
+	}
+
+	var n int
+	if err := db.Raw("SELECT count(*) FROM `constraint_children`").Scan(&n).Error; err != nil {
+		t.Fatal(err)
+	}
+	if n != 1 {
+		t.Errorf("rows after rebuild = %d, want 1", n)
+	}
+	if !db.Migrator().HasConstraint(&ConstraintChild{}, "fk_constraint_children_parent") {
+		t.Error("foreign key constraint missing after AutoMigrate")
+	}
+}
+
+type compositeKeyModel struct {
+	A int    `gorm:"primaryKey;autoIncrement"`
+	B string `gorm:"primaryKey"`
+}
+
+func (compositeKeyModel) TableName() string { return "composite_key_models" }
+
+// A composite primary key that includes an auto-increment field must keep all
+// key columns. AUTOINCREMENT only applies to a single-column INTEGER PRIMARY
+// KEY, and emitting it made GORM skip the table-level PRIMARY KEY clause,
+// silently reducing the key to one column.
+func TestCompositePrimaryKeyAutoIncrement(t *testing.T) {
+	db, err := gorm.Open(Open("file:composite_pk?mode=memory&cache=shared"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("gorm.Open: %v", err)
+	}
+	t.Cleanup(func() {
+		if sqlDB, err := db.DB(); err == nil {
+			_ = sqlDB.Close()
+		}
+	})
+
+	if err := db.AutoMigrate(&compositeKeyModel{}); err != nil {
+		t.Fatalf("AutoMigrate: %v", err)
+	}
+	var pkCount int
+	if err := db.Raw("SELECT count(*) FROM pragma_table_info('composite_key_models') WHERE pk > 0").Scan(&pkCount).Error; err != nil {
+		t.Fatal(err)
+	}
+	if pkCount != 2 {
+		var ddl string
+		_ = db.Raw("SELECT sql FROM sqlite_master WHERE type='table' AND name='composite_key_models'").Scan(&ddl).Error
+		t.Errorf("primary key column count = %d, want 2 (DDL: %s)", pkCount, ddl)
+	}
+}
+
+// GetTables must not report SQLite internal tables such as sqlite_sequence,
+// which appears as soon as any table uses AUTOINCREMENT.
+func TestGetTablesExcludesInternal(t *testing.T) {
+	db, err := gorm.Open(Open("file:internal_tables?mode=memory&cache=shared"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("gorm.Open: %v", err)
+	}
+	t.Cleanup(func() {
+		if sqlDB, err := db.DB(); err == nil {
+			_ = sqlDB.Close()
+		}
+	})
+
+	if err := db.Exec("CREATE TABLE `seq_table` (`id` integer PRIMARY KEY AUTOINCREMENT)").Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Exec("INSERT INTO `seq_table` DEFAULT VALUES").Error; err != nil {
+		t.Fatal(err)
+	}
+
+	tables, err := db.Migrator().GetTables()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tb := range tables {
+		if strings.HasPrefix(tb, "sqlite_") {
+			t.Errorf("GetTables returned internal table %q", tb)
+		}
+	}
+	if len(tables) != 1 || tables[0] != "seq_table" {
+		t.Errorf("GetTables = %v, want [seq_table]", tables)
+	}
+}
+
+type checkedModel struct {
+	ID  int
+	Age int `gorm:"check:age_positive,age > 0"`
+}
+
+func (checkedModel) TableName() string { return "checked_models" }
+
+// HasConstraint must match the exact constraint name instead of a LIKE
+// substring, and DropColumn must fail for a column that is not in the DDL
+// instead of silently rebuilding an identical table.
+func TestConstraintAndColumnMatching(t *testing.T) {
+	db, err := gorm.Open(Open("file:constraint_matching?mode=memory&cache=shared"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("gorm.Open: %v", err)
+	}
+	t.Cleanup(func() {
+		if sqlDB, err := db.DB(); err == nil {
+			_ = sqlDB.Close()
+		}
+	})
+
+	if err := db.AutoMigrate(&checkedModel{}); err != nil {
+		t.Fatal(err)
+	}
+	if !db.Migrator().HasConstraint(&checkedModel{}, "age_positive") {
+		t.Error("HasConstraint(age_positive) = false, want true")
+	}
+	if db.Migrator().HasConstraint(&checkedModel{}, "age_pos") {
+		t.Error("HasConstraint(age_pos) matched by prefix, want false")
+	}
+
+	// unquoted DDL: the column must still be dropped
+	if err := db.Exec("CREATE TABLE plain_cols (id integer, name text)").Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Migrator().DropColumn(&plainColModel{}, "name"); err != nil {
+		t.Fatalf("DropColumn on unquoted DDL: %v", err)
+	}
+	if db.Migrator().HasColumn(&plainColModel{}, "name") {
+		t.Error("column still present after DropColumn on unquoted DDL")
+	}
+	// a missing column must be an error, not a silent no-op
+	if err := db.Migrator().DropColumn(&plainColModel{}, "missing"); err == nil {
+		t.Error("DropColumn(missing) = nil, want error")
+	}
+	// a missing table must be reported clearly
+	if err := db.Migrator().DropColumn(&noSuchTableModel{}, "col"); err == nil || !strings.Contains(err.Error(), "table not found") {
+		t.Errorf("DropColumn on a missing table = %v, want a table-not-found error", err)
+	}
+}
+
+type plainColModel struct {
+	ID   int
+	Name string
+}
+
+func (plainColModel) TableName() string { return "plain_cols" }
+
+type noSuchTableModel struct {
+	ID int
+}
+
+func (noSuchTableModel) TableName() string { return "no_such_table" }
+
+// HasConstraint reports a plain bool, so looking it up on a table that does not
+// exist must simply answer false and leave the caller's session usable.
+func TestHasConstraintMissingTable(t *testing.T) {
+	db, err := gorm.Open(Open("file:hasconstraint_missing?mode=memory&cache=shared"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("gorm.Open: %v", err)
+	}
+	t.Cleanup(func() {
+		if sqlDB, err := db.DB(); err == nil {
+			_ = sqlDB.Close()
+		}
+	})
+
+	if db.Migrator().HasConstraint(&noSuchTableModel{}, "chk_x") {
+		t.Error("HasConstraint on a missing table = true, want false")
+	}
+	if db.Error != nil {
+		t.Errorf("session left with an error: %v", db.Error)
+	}
+	if err := db.Exec("CREATE TABLE hc_probe (id integer)").Error; err != nil {
+		t.Errorf("follow-up statement on the same session failed: %v", err)
+	}
 }
