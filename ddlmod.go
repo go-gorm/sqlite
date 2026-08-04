@@ -155,7 +155,9 @@ func parseDDL(strs ...string) (*ddl, error) {
 					}
 					if defaultMatches := defaultValueRegexp.FindStringSubmatch(matches[3]); len(defaultMatches) > 1 {
 						if strings.ToLower(defaultMatches[1]) != "null" {
-							columnType.DefaultValueValue = sql.NullString{String: strings.Trim(defaultMatches[1], `"`), Valid: true}
+							// single quotes are standard SQL string literals,
+							// double quotes come from tables created by older versions
+							columnType.DefaultValueValue = sql.NullString{String: trimQuote(defaultMatches[1]), Valid: true}
 						}
 					}
 
@@ -291,4 +293,15 @@ func (d *ddl) removeColumn(name string) bool {
 	}
 
 	return false
+}
+
+// trimQuote removes one pair of matching outer quotes from a default value
+// literal, so inner quotes of values like '"x"' survive.
+func trimQuote(s string) string {
+	if len(s) >= 2 {
+		if (s[0] == '\'' && s[len(s)-1] == '\'') || (s[0] == '"' && s[len(s)-1] == '"') {
+			return s[1 : len(s)-1]
+		}
+	}
+	return s
 }
