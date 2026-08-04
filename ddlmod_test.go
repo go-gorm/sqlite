@@ -2,6 +2,8 @@ package sqlite
 
 import (
 	"database/sql"
+	"reflect"
+	"strings"
 	"testing"
 
 	"gorm.io/gorm/migrator"
@@ -553,6 +555,80 @@ func TestConstraintNameQuoting(t *testing.T) {
 	}
 }
 
+// Column names carry the same quoting forms as constraint names, and SQLite
+// identifiers are not restricted to ASCII. A column the parser does not see is
+// dropped from the rebuild's copy list, so its data is lost.
+func TestParseDDL_ColumnIdentifiers(t *testing.T) {
+	forms := []struct {
+		desc, ddl string
+		want      []string
+	}{
+		{"backquotes", "CREATE TABLE `t` (`a` integer, `b` text)", []string{"`a`", "`b`"}},
+		{"double quotes", `CREATE TABLE "t" ("a" integer, "b" text)`, []string{"`a`", "`b`"}},
+		{"brackets", "CREATE TABLE t ([a] integer, [b] text)", []string{"`a`", "`b`"}},
+		{"unquoted", "CREATE TABLE t (a integer, b text)", []string{"`a`", "`b`"}},
+		{"non-ASCII", "CREATE TABLE `t` (`用户名` text, `b` integer)", []string{"`用户名`", "`b`"}},
+	}
+	for _, f := range forms {
+		d, err := parseDDL(f.ddl)
+		if err != nil {
+			t.Fatalf("%s: %v", f.desc, err)
+		}
+		if cols := d.getColumns(); !reflect.DeepEqual(cols, f.want) {
+			t.Errorf("%s: getColumns = %v, want %v", f.desc, cols, f.want)
+		}
+		if len(d.columns) != len(f.want) {
+			t.Errorf("%s: parsed %d columns, want %d", f.desc, len(d.columns), len(f.want))
+		}
+	}
+}
+
+// ColumnTypes feeds parseDDL the table DDL together with every index DDL, so an
+// index name the parser cannot read fails the whole call with "invalid DDL".
+func TestParseDDL_IndexIdentifiers(t *testing.T) {
+	forms := map[string]string{
+		"backquotes": "CREATE INDEX `idx_a` ON `t`(`a`)",
+		"brackets":   "CREATE INDEX [idx_a] ON [t]([a])",
+		"unquoted":   "CREATE INDEX idx_a ON t(a)",
+		"non-ASCII":  "CREATE INDEX `索引_a` ON `t`(`a`)",
+		"unique":     "CREATE UNIQUE INDEX [idx_b] ON [t]([b])",
+	}
+	for form, ddlSQL := range forms {
+		if _, err := parseDDL("CREATE TABLE `t` (`a` integer, `b` text)", ddlSQL); err != nil {
+			t.Errorf("%s: %v", form, err)
+		}
+	}
+}
+
+// A bracket-quoted table name must parse and rebuild like the other forms.
+// renameTable has to consume the brackets as well, or the rewritten head
+// becomes [`t__temp`], naming a table with literal backquotes in it.
+func TestParseDDL_TableIdentifiers(t *testing.T) {
+	forms := map[string]string{
+		"backquotes":    "CREATE TABLE `t` (`a` integer, `b` text)",
+		"double quotes": `CREATE TABLE "t" ("a" integer, "b" text)`,
+		"single quotes": "CREATE TABLE 't' (`a` integer, `b` text)",
+		"brackets":      "CREATE TABLE [t] ([a] integer, [b] text)",
+		"unquoted":      "CREATE TABLE t (a integer, b text)",
+	}
+	for form, ddlSQL := range forms {
+		d, err := parseDDL(ddlSQL)
+		if err != nil {
+			t.Fatalf("%s: %v", form, err)
+		}
+		if err := d.renameTable("t__temp", "t"); err != nil {
+			t.Errorf("%s: renameTable: %v", form, err)
+			continue
+		}
+		if !strings.Contains(d.head, "`t__temp`") {
+			t.Errorf("%s: renamed head = %q, want it to quote t__temp", form, d.head)
+		}
+		if strings.ContainsAny(d.head, "[]") {
+			t.Errorf("%s: renamed head still carries the old brackets: %q", form, d.head)
+		}
+	}
+}
+
 // removeColumn matches the column name against the raw DDL field, so it has to
 // cope with every identifier quoting form. A false return now makes DropColumn
 // fail, so a missed match is no longer a silent no-op.
@@ -587,6 +663,7 @@ func TestUniqueConstraintNameQuoting(t *testing.T) {
 		"single quotes": "CREATE TABLE `t` (`a` integer, CONSTRAINT 'u_a' UNIQUE (`a`))",
 		"brackets":      "CREATE TABLE t (a integer, CONSTRAINT [u_a] UNIQUE (a))",
 		"unquoted":      "CREATE TABLE t (a integer, CONSTRAINT u_a UNIQUE (a))",
+		"non-ASCII":     "CREATE TABLE `t` (`a` integer, CONSTRAINT `唯一_a` UNIQUE (`a`))",
 	}
 	for form, ddlSQL := range forms {
 		d, err := parseDDL(ddlSQL)
