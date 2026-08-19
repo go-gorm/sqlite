@@ -89,7 +89,18 @@ func (m Migrator) AlterColumn(value interface{}, name string) error {
 				for i, f := range ddl.fields {
 					if matches := columnRegexp.FindStringSubmatch(f); len(matches) > 1 && matches[1] == field.DBName {
 						ddl.fields[i] = fmt.Sprintf("`%v` ?", field.DBName)
-						sqlArgs = []interface{}{m.FullDataTypeOf(field)}
+						dataType := m.FullDataTypeOf(field)
+						sqlArgs = []interface{}{dataType}
+						if strings.Contains(strings.ToUpper(dataType.SQL), "PRIMARY KEY") {
+							for j, g := range ddl.fields {
+								if strings.HasPrefix(strings.ToUpper(g), "PRIMARY KEY") {
+									if cols, err := parseAllColumns(g); err == nil && len(cols) == 1 && cols[0] == field.DBName {
+										ddl.fields = append(ddl.fields[:j], ddl.fields[j+1:]...)
+										break
+									}
+								}
+							}
+						}
 						// table created by old version might look like `CREATE TABLE ? (? varchar(10) UNIQUE)`.
 						// FullDataTypeOf doesn't contain UNIQUE, so we need to add unique constraint.
 						if strings.Contains(strings.ToUpper(matches[3]), " UNIQUE") {
