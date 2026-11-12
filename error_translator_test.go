@@ -81,6 +81,23 @@ func TestTranslateForeignKeyViolated(t *testing.T) {
 	}
 }
 
+func TestTranslateCheckConstraintViolated(t *testing.T) {
+	type Item struct {
+		ID    uint
+		Price int `gorm:"check:price_positive,price > 0"`
+	}
+
+	db := openTranslating(t, "file:translate_check?mode=memory&cache=shared")
+	if err := db.AutoMigrate(&Item{}); err != nil {
+		t.Fatalf("failed to migrate: %v", err)
+	}
+
+	err := db.Create(&Item{Price: -1}).Error
+	if !errors.Is(err, gorm.ErrCheckConstraintViolated) {
+		t.Errorf("expected gorm.ErrCheckConstraintViolated, got: %v", err)
+	}
+}
+
 func TestTranslateWrappedError(t *testing.T) {
 	dialector := Dialector{}
 	sqliteErr := sqlite3.Error{

@@ -9,6 +9,7 @@ var errCodes = map[int]error{
 	1555: gorm.ErrDuplicatedKey,
 	2067: gorm.ErrDuplicatedKey,
 	787:  gorm.ErrForeignKeyViolated,
+	275:  gorm.ErrCheckConstraintViolated,
 }
 
 // ErrMessage was the intermediate shape the extended result code used to be
